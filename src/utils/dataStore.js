@@ -79,16 +79,107 @@ export const INITIAL_BILLS = [
     customer_name: 'Rajesh Sharma',
     customer_phone: '9876543210',
     doctor_name: 'Dr. S. Sharma, MD',
+    payment_method: 'UPI',
+    payment_status: 'PAID',
+    subtotal: 1250.00,
+    tax_amount: 150.00,
+    discount: 50.00,
+    total_amount: 1350.00,
+    grandTotal: 1350.00,
+    username: 'Staff Pharmacist',
+    items: [
+      { medicine_name: 'Augmentin 625 Duo', quantity: 4, unit_price: 195.50, subtotal: 782.00 },
+      { medicine_name: 'Paracetamol 650mg (Dolo 650)', quantity: 10, unit_price: 32.00, subtotal: 320.00 },
+      { medicine_name: 'Vitamin C + Zinc (Limcee)', quantity: 4, unit_price: 38.00, subtotal: 152.00 }
+    ],
+    created_at: new Date().toISOString(),
+    date: new Date().toISOString()
+  },
+  {
+    id: 2,
+    invoice_number: 'INV-2026-0002',
+    customer_name: 'Pooja Patel',
+    customer_phone: '9820394857',
+    doctor_name: 'Dr. R. Iyer, MBBS',
     payment_method: 'CASH',
     payment_status: 'PAID',
-    subtotal: 391.00,
-    tax_amount: 70.38,
+    subtotal: 820.00,
+    tax_amount: 98.40,
     discount: 0,
-    total_amount: 461.38,
+    total_amount: 918.40,
+    grandTotal: 918.40,
+    username: 'Staff Pharmacist',
     items: [
-      { medicine_name: 'Augmentin 625 Duo', quantity: 2, unit_price: 195.50, subtotal: 391.00 }
+      { medicine_name: 'Cetirizine 10mg (Cetzine)', quantity: 10, unit_price: 28.00, subtotal: 280.00 },
+      { medicine_name: 'Benadryl Cough Formula', quantity: 2, unit_price: 110.00, subtotal: 220.00 },
+      { medicine_name: 'Pantoprazole 40mg (Pan 40)', quantity: 4, unit_price: 78.00, subtotal: 312.00 }
     ],
-    created_at: new Date(Date.now() - 86400000).toISOString()
+    created_at: new Date().toISOString(),
+    date: new Date().toISOString()
+  },
+  {
+    id: 3,
+    invoice_number: 'INV-2026-0003',
+    customer_name: 'Karan Mehta',
+    customer_phone: '9819283746',
+    doctor_name: 'Dr. R. Iyer, MBBS',
+    payment_method: 'UPI',
+    payment_status: 'PAID',
+    subtotal: 1450.00,
+    tax_amount: 174.00,
+    discount: 100.00,
+    total_amount: 1524.00,
+    grandTotal: 1524.00,
+    username: 'Admin',
+    items: [
+      { medicine_name: 'Ibuprofen 400mg (Brufen)', quantity: 15, unit_price: 48.00, subtotal: 720.00 },
+      { medicine_name: 'Telmisartan 40mg (Telma 40)', quantity: 5, unit_price: 92.00, subtotal: 460.00 },
+      { medicine_name: 'Vitamin D3 60K IU (Calcirol)', quantity: 2, unit_price: 160.00, subtotal: 320.00 }
+    ],
+    created_at: new Date(Date.now() - 3600000 * 4).toISOString(),
+    date: new Date(Date.now() - 3600000 * 4).toISOString()
+  },
+  {
+    id: 4,
+    invoice_number: 'INV-2026-0004',
+    customer_name: 'Amit Verma',
+    customer_phone: '9870192837',
+    doctor_name: 'Dr. S. K. Gupta, MD',
+    payment_method: 'CARD',
+    payment_status: 'PAID',
+    subtotal: 2100.00,
+    tax_amount: 252.00,
+    discount: 150.00,
+    total_amount: 2202.00,
+    grandTotal: 2202.00,
+    username: 'Staff Pharmacist',
+    items: [
+      { medicine_name: 'Amoxicillin 500mg', quantity: 20, unit_price: 85.00, subtotal: 1700.00 },
+      { medicine_name: 'Montelukast 10mg (Montair)', quantity: 4, unit_price: 115.00, subtotal: 460.00 }
+    ],
+    created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+    date: new Date(Date.now() - 86400000 * 2).toISOString()
+  },
+  {
+    id: 5,
+    invoice_number: 'INV-2026-0005',
+    customer_name: 'Sunita Rao',
+    customer_phone: '9833445566',
+    doctor_name: 'Dr. S. Sharma, MD',
+    payment_method: 'UPI',
+    payment_status: 'PAID',
+    subtotal: 940.00,
+    tax_amount: 112.80,
+    discount: 50.00,
+    total_amount: 1002.80,
+    grandTotal: 1002.80,
+    username: 'Admin',
+    items: [
+      { medicine_name: 'Metformin 500mg (Glycomet)', quantity: 15, unit_price: 42.00, subtotal: 630.00 },
+      { medicine_name: 'Glimepiride 2mg (Amaryl)', quantity: 5, unit_price: 65.00, subtotal: 325.00 }
+    ],
+    created_at: new Date(Date.now() - 86400000 * 3).toISOString(),
+    date: new Date(Date.now() - 86400000 * 3).toISOString()
   }
 ];
 
@@ -288,4 +379,57 @@ export function addLocalBill(bill) {
   const updated = [newBill, ...current];
   localStorage.setItem('medstock_bills', JSON.stringify(updated));
   return newBill;
+}
+
+export function getSalesAnalytics(range = 'today') {
+  const bills = getLocalBills();
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+
+  const filteredBills = bills.filter(b => {
+    if (!b.created_at && !b.date) return true;
+    const billDate = new Date(b.created_at || b.date);
+    if (range === 'today') {
+      return billDate.toISOString().split('T')[0] === todayStr;
+    }
+    if (range === 'week') {
+      const weekAgo = new Date(now.getTime() - 7 * 86400000);
+      return billDate >= weekAgo;
+    }
+    if (range === 'month') {
+      const monthAgo = new Date(now.getTime() - 30 * 86400000);
+      return billDate >= monthAgo;
+    }
+    return true;
+  });
+
+  const totalSales = filteredBills.length;
+  const totalRevenue = filteredBills.reduce((sum, b) => sum + (parseFloat(b.total_amount || b.grandTotal) || 0), 0);
+
+  // Payment Breakdown
+  const pMap = {};
+  filteredBills.forEach(b => {
+    const method = (b.payment_method || b.paymentMethod || 'CASH').toUpperCase();
+    const amt = parseFloat(b.total_amount || b.grandTotal) || 0;
+    if (!pMap[method]) pMap[method] = { payment_method: method, count: 0, total: 0 };
+    pMap[method].count += 1;
+    pMap[method].total += amt;
+  });
+
+  // User Breakdown
+  const uMap = {};
+  filteredBills.forEach(b => {
+    const user = b.username || 'Staff Pharmacist';
+    const amt = parseFloat(b.total_amount || b.grandTotal) || 0;
+    if (!uMap[user]) uMap[user] = { username: user, totalRevenue: 0, totalOrders: 0 };
+    uMap[user].totalRevenue += amt;
+    uMap[user].totalOrders += 1;
+  });
+
+  return {
+    totalSales,
+    totalRevenue,
+    paymentBreakdown: Object.values(pMap),
+    userBreakdown: Object.values(uMap)
+  };
 }
