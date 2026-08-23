@@ -1,0 +1,186 @@
+{
+  "name": "MedStock Autonomous Pharmacy Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "name": "Schedule Trigger (Every 6h)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5000/api/reports/low-stock",
+        "options": {}
+      },
+      "name": "Fetch Low Stock Medicines",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ .items.length }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "name": "Has Low Stock Items?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "@MedStockAlerts",
+        "text": "🚨 *MedStock Urgent Stockout Warning*\n\nFound {{ .items.length }} medicines below safety threshold. Initiating auto-restock sequence.",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "name": "Send Telegram / Email Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        950,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "prescription-upload",
+        "responseMode": "lastNode"
+      },
+      "name": "Webhook: New Prescription Upload",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5000/api/ai/scan-prescription",
+        "method": "POST",
+        "bodyParametersUi": {
+          "parameter": [
+            {
+              "name": "imageBase64",
+              "value": "={{ .body.imageBase64 }}"
+            }
+          ]
+        }
+      },
+      "name": "MedStock AI Vision OCR Node",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        500,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5000/api/ai/check-interactions",
+        "method": "POST",
+        "bodyParametersUi": {
+          "parameter": [
+            {
+              "name": "medicines",
+              "value": "={{ .medicines.map(m => m.name) }}"
+            }
+          ]
+        }
+      },
+      "name": "AI Drug Interaction Safety Gate",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        750,
+        520
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger (Every 6h)": {
+      "main": [
+        [
+          {
+            "node": "Fetch Low Stock Medicines",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Low Stock Medicines": {
+      "main": [
+        [
+          {
+            "node": "Has Low Stock Items?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Low Stock Items?": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram / Email Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook: New Prescription Upload": {
+      "main": [
+        [
+          {
+            "node": "MedStock AI Vision OCR Node",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MedStock AI Vision OCR Node": {
+      "main": [
+        [
+          {
+            "node": "AI Drug Interaction Safety Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
