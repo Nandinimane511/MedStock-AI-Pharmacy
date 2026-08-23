@@ -4,6 +4,7 @@ import { AiOutlineClose } from "react-icons/ai";
 import api from "../api/axiosConfig";
 import toast from 'react-hot-toast';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
+import { getLocalInventory } from '../utils/dataStore';
 
 const Reports = () => {
   const [lowStockItems, setLowStockItems] = useState([]); // Stores low stock items
@@ -30,18 +31,28 @@ const Reports = () => {
     const fetchStockCounts = async () => {
       try {
         const response = await api.get("/reports/stock");
-        const data = response.data;
-
-        setStockCounts({
-          totalItems: data.totalItems,
-          totalStock: data.totalStock,
-          lowStock: data.lowStock,
-          expiredItems: data.expiredItems,
-        });
+        if (response.data && response.data.totalItems !== undefined) {
+          const data = response.data;
+          setStockCounts({
+            totalItems: data.totalItems,
+            totalStock: data.totalStock,
+            lowStock: data.lowStock,
+            expiredItems: data.expiredItems,
+          });
+          return;
+        }
       } catch (error) {
-        console.error("Error fetching stock counts:", error);
-        toast.error("Error fetching stock counts");
+        console.warn("Backend reports stock offline, calculating locally:", error);
       }
+
+      // Local store fallback
+      const inv = getLocalInventory();
+      const totalItems = inv.length;
+      const totalStock = inv.reduce((sum, i) => sum + (parseInt(i.quantity, 10) || 0), 0);
+      const lowStock = inv.filter(i => (parseInt(i.quantity, 10) || 0) <= (parseInt(i.threshold, 10) || 10)).length;
+      const expiredItems = inv.filter(i => i.expiryDate && new Date(i.expiryDate) < new Date()).length;
+
+      setStockCounts({ totalItems, totalStock, lowStock, expiredItems });
     };
 
     fetchStockCounts();

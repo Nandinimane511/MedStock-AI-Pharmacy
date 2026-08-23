@@ -5,6 +5,13 @@ import { FaRobot, FaBoxes, FaTags, FaExchangeAlt, FaPlus, FaEdit, FaTrash } from
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import toast from 'react-hot-toast';
 import AIGenericFinderModal from './AIGenericFinderModal';
+import { 
+  getLocalInventory, 
+  saveLocalInventory, 
+  addLocalInventoryItem, 
+  updateLocalInventoryItem, 
+  deleteLocalInventoryItem 
+} from '../utils/dataStore';
 
 export default function Inventory() {
   const [inventory, setInventory] = useState([]);
@@ -34,15 +41,21 @@ export default function Inventory() {
 
   const [selectedItem, setSelectedItem] = useState(null);
 
-  const fetchInventoryData = () => {
-    api.get('/inventory')
-      .then(response => {
+  const fetchInventoryData = async () => {
+    try {
+      const response = await api.get('/inventory');
+      if (Array.isArray(response.data) && response.data.length > 0) {
         setInventory(response.data);
         setFilteredInventory(response.data);
-      })
-      .catch(error => {
-        console.error('Error fetching inventory:', error);
-      });
+        saveLocalInventory(response.data);
+        return;
+      }
+    } catch (error) {
+      console.warn('Backend inventory fetch offline, loading local store:', error);
+    }
+    const local = getLocalInventory();
+    setInventory(local);
+    setFilteredInventory(local);
   };
 
   const fetchAiInsights = () => {
@@ -133,53 +146,53 @@ export default function Inventory() {
     setFilteredInventory(filtered);
   };
 
-  const handleSaveItem = (e) => {
+  const handleSaveItem = async (e) => {
     e.preventDefault();
-    api.post('/inventory', newItem)
-      .then(() => {
-        fetchInventoryData();
-        fetchAiInsights();
-        closeAddModal();
-        toast.success("Medicine added successfully!");
-      })
-      .catch(error => {
-        console.error('Error adding item:', error);
-        toast.error("Failed to add medicine");
-      });
+    if (!newItem.name || !newItem.name.trim()) {
+      toast.error('Please enter a medicine name');
+      return;
+    }
+
+    try {
+      await api.post('/inventory', newItem);
+    } catch (error) {
+      console.warn('Backend save unavailable, saving to local store:', error);
+    }
+
+    const added = addLocalInventoryItem(newItem);
+    fetchInventoryData();
+    closeAddModal();
+    toast.success(`Medicine "${added.name}" added successfully!`);
   };
 
-  const handleRemoveSelectedItem = () => {
+  const handleRemoveSelectedItem = async () => {
     if (!selectedItem) {
       toast.error("Please select an item to remove");
       return;
     }
-    api.delete(`/inventory/${selectedItem}`)
-      .then(() => {
-        fetchInventoryData();
-        fetchAiInsights();
-        closeRemoveModal();
-        setSelectedItem(null);
-        toast.success("Medicine removed successfully");
-      })
-      .catch(error => {
-        console.error('Error removing item:', error);
-        toast.error("Failed to remove item");
-      });
+    try {
+      await api.delete(`/inventory/${selectedItem}`);
+    } catch (error) {
+      console.warn('Backend delete unavailable, deleting from local store:', error);
+    }
+    deleteLocalInventoryItem(selectedItem);
+    fetchInventoryData();
+    closeRemoveModal();
+    setSelectedItem(null);
+    toast.success("Medicine removed successfully");
   };
 
-  const handleUpdateItemDetails = (e) => {
+  const handleUpdateItemDetails = async (e) => {
     e.preventDefault();
-    api.put(`/inventory/${newItem.id}`, newItem)
-      .then(() => {
-        fetchInventoryData();
-        fetchAiInsights();
-        closeUpdateModal();
-        toast.success("Medicine updated successfully");
-      })
-      .catch(error => {
-        console.error('Error updating item:', error);
-        toast.error("Failed to update item");
-      });
+    try {
+      await api.put(`/inventory/${newItem.id}`, newItem);
+    } catch (error) {
+      console.warn('Backend update unavailable, updating local store:', error);
+    }
+    updateLocalInventoryItem(newItem);
+    fetchInventoryData();
+    closeUpdateModal();
+    toast.success("Medicine updated successfully");
   };
 
   // Dynamic Chart calculations

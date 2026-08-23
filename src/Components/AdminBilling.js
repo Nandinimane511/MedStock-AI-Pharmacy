@@ -7,6 +7,7 @@ import "jspdf-autotable";
 import { FaExchangeAlt, FaFilePrescription, FaFileInvoiceDollar, FaCheckCircle } from 'react-icons/fa';
 import AIGenericFinderModal from './AIGenericFinderModal';
 import AIPrescriptionParserModal from './AIPrescriptionParserModal';
+import { getLocalBills } from '../utils/dataStore';
 
 const AdminBilling = () => {
   const [pendingOrders, setPendingOrders] = useState([]);
@@ -27,10 +28,11 @@ const AdminBilling = () => {
   const fetchDeliveredOrders = async () => {
     try {
       const response = await api.get("/get-delivered-orders");
-      setPendingOrders(response.data);
+      if (Array.isArray(response.data)) {
+        setPendingOrders(response.data);
+      }
     } catch (error) {
-      console.error("Error fetching delivered orders:", error);
-      toast.error("Failed to fetch delivered orders.");
+      console.warn("Delivered orders unavailable");
     }
   };
 
@@ -38,13 +40,17 @@ const AdminBilling = () => {
   const fetchPreviousBills = async () => {
     try {
       const response = await api.get("/get-bills");
-      setPreviousBills(response.data);
+      if (Array.isArray(response.data) && response.data.length > 0) {
+        setPreviousBills(response.data);
+        return;
+      }
     } catch (error) {
-      console.error("Error fetching previous bills:", error);
-      toast.error("Failed to fetch previous bills.");
+      console.warn("Backend previous bills unavailable, loading local store:", error);
     } finally {
       setLoading(false);
     }
+    const localBills = getLocalBills();
+    setPreviousBills(localBills);
   };
 
   // Fetch today's sales summary

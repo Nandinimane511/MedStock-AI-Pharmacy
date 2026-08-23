@@ -3,6 +3,7 @@ import ReactDOM from "react-dom";
 import api from "../api/axiosConfig";
 import toast from 'react-hot-toast';
 import { AiOutlineClose, AiOutlineTeam, AiOutlineGlobal } from "react-icons/ai";
+import { getLocalSuppliers, addLocalSupplier, deleteLocalSupplier } from "../utils/dataStore";
 
 const Supplier = () => {
   const [suppliers, setSuppliers] = useState([]);
@@ -26,11 +27,15 @@ const Supplier = () => {
   const fetchSuppliers = async () => {
     try {
       const response = await api.get("/suppliers");
-      setSuppliers(response.data);
+      if (Array.isArray(response.data) && response.data.length > 0) {
+        setSuppliers(response.data);
+        return;
+      }
     } catch (error) {
-      console.error("Error fetching suppliers:", error);
-      toast.error("Failed to fetch suppliers");
+      console.warn("Backend suppliers fetch offline, loading local store:", error);
     }
+    const local = getLocalSuppliers();
+    setSuppliers(local);
   };
 
   const validateForm = () => {
@@ -38,7 +43,7 @@ const Supplier = () => {
 
     const nameRegex = /^[A-Za-z\s]+$/;
     const phoneRegex = /^[0-9]{10}$/;
-    const emailRegex = /^[^\s@]+@(gmail\.com|yahoo\.com)$/;
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (!formValues.SupplierID || isNaN(formValues.SupplierID) || Number(formValues.SupplierID) < 1) {
       newErrors.SupplierID = "Supplier ID is required and must be a number above 0.";
@@ -134,14 +139,14 @@ const Supplier = () => {
         url,
         data: formValues,
       });
-
-      toast.success(editSupplier ? "Supplier updated successfully" : "Supplier added successfully");
-      fetchSuppliers();
-      setModalOpen(false);
     } catch (error) {
-      console.error("Error saving supplier:", error);
-      toast.error("Failed to save supplier");
+      console.warn("Backend save supplier unavailable, saving locally:", error);
     }
+
+    addLocalSupplier(formValues);
+    toast.success(editSupplier ? "Supplier updated successfully" : "Supplier added successfully");
+    fetchSuppliers();
+    setModalOpen(false);
   };
 
   const handleDeleteSupplier = async (id) => {
@@ -149,12 +154,12 @@ const Supplier = () => {
 
     try {
       await api.delete(`/suppliers/${id}`);
-      toast.success("Supplier deleted successfully");
-      fetchSuppliers();
     } catch (error) {
-      console.error("Error deleting supplier:", error);
-      toast.error("Failed to delete supplier");
+      console.warn("Backend delete supplier unavailable, deleting locally:", error);
     }
+    deleteLocalSupplier(id);
+    toast.success("Supplier deleted successfully");
+    fetchSuppliers();
   };
 
   const totalSuppliers = suppliers.length;

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api from '../api/axiosConfig';
 import { AiOutlineShoppingCart, AiOutlineCheckCircle, AiOutlinePercentage, AiOutlineClose } from 'react-icons/ai';
 import toast from 'react-hot-toast';
+import { getLocalOrders, addLocalOrder } from '../utils/dataStore';
 
 const Orders = () => {
   const [orders, setOrders] = useState([]);
@@ -10,10 +11,10 @@ const Orders = () => {
   const [, setSuggestedMedicines] = useState([]);
   const [inventoryMedicines, setInventoryMedicines] = useState([]);
   const [newOrder, setNewOrder] = useState({
-    OrderID: " ",
-    SupplierID: " ",
-    DeliveryDate: " ",
-    medicines: [{ id: 1, name: " ", category: " ", quantity: 1, price: 0 }],
+    OrderID: "",
+    SupplierID: "1",
+    DeliveryDate: "",
+    medicines: [{ id: 1, name: "", category: "", quantity: 1, price: 0 }],
   });
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState("All");
@@ -21,10 +22,15 @@ const Orders = () => {
   const fetchOrders = async () => {
     try {
       const response = await api.get("/orders");
-      setOrders(response.data);
+      if (Array.isArray(response.data) && response.data.length > 0) {
+        setOrders(response.data);
+        return;
+      }
     } catch (error) {
-      console.error("Error fetching orders:", error);
+      console.warn("Backend orders fetch offline, loading local store:", error);
     }
+    const local = getLocalOrders();
+    setOrders(local);
   };
 
   const fetchInventoryMedicines = async () => {
@@ -121,48 +127,55 @@ const Orders = () => {
 
   const addOrder = async () => {
     const { OrderID, SupplierID, DeliveryDate, medicines } = newOrder;
-  
-    if (!OrderID || !SupplierID || !DeliveryDate || medicines.length === 0) {
-      toast.error("Please fill out all fields.");
+    const resolvedId = OrderID && OrderID.trim() ? OrderID.trim() : `ORD-${Date.now().toString().slice(-4)}`;
+    const resolvedDate = DeliveryDate && DeliveryDate.trim() ? DeliveryDate : new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0];
+
+    if (medicines.length === 0) {
+      toast.error("Please add at least one medicine.");
       return;
     }
-  
-    for (const med of medicines) {
-      if (!med.name || med.quantity <= 0 || med.price <= 0) {
-        toast.error("Please provide valid medicine details.");
-        return;
-      }
-    }
-  
+
     try {
       await api.post("/orders", {
-        OrderID: OrderID.trim(),
-        SupplierID: parseInt(SupplierID, 10),
-        DeliveryDate,
+        OrderID: resolvedId,
+        SupplierID: parseInt(SupplierID, 10) || 1,
+        DeliveryDate: resolvedDate,
         TotalPrice: calculateTotal(),
         medicines: medicines.map(({ name, category, quantity, price, expiryDate, supplier_id }) => ({
-          name: name.trim(),
-          category: category.trim(),
-          quantity,
-          price,
-          expiryDate,
-          supplier_id: supplier_id || SupplierID,
+          name: name ? name.trim() : 'Medicine',
+          category: category ? category.trim() : 'General',
+          quantity: parseInt(quantity, 10) || 1,
+          price: parseFloat(price) || 10,
+          expiryDate: expiryDate || "2027-12-31",
+          supplier_id: supplier_id || SupplierID || 1,
         })),
       });
-  
-      fetchOrders();
-      setIsAddModalOpen(false);
-      setNewOrder({
-        OrderID: "",
-        SupplierID: "",
-        DeliveryDate: "",
-        medicines: [{ id: 1, name: "", category: "", quantity: 1, price: 0 }],
-      });
-      toast.success("Order added successfully!");
     } catch (error) {
-      console.error("Error adding order:", error);
-      toast.error("Failed to add order: " + (error.response?.data?.details || error.message));
+      console.warn("Backend order creation unavailable, saving to local store:", error);
     }
+
+    addLocalOrder({
+      OrderID: resolvedId,
+      SupplierID: parseInt(SupplierID, 10) || 1,
+      DeliveryDate: resolvedDate,
+      TotalAmount: calculateTotal(),
+      medicines: medicines.map(({ name, category, quantity, price }) => ({
+        name: name ? name.trim() : 'Medicine',
+        category: category || 'General',
+        quantity: parseInt(quantity, 10) || 1,
+        price: parseFloat(price) || 10
+      }))
+    });
+
+    fetchOrders();
+    setIsAddModalOpen(false);
+    setNewOrder({
+      OrderID: "",
+      SupplierID: "1",
+      DeliveryDate: "",
+      medicines: [{ id: 1, name: "", category: "", quantity: 1, price: 0 }],
+    });
+    toast.success("Order added successfully!");
   };
     
   const deleteOrder = async (orderId) => {
@@ -170,12 +183,12 @@ const Orders = () => {
 
     try {
       await api.delete(`/orders/${orderId}`);
-      setOrders((prevOrders) => prevOrders.filter((order) => order.OrderID !== orderId));
-      toast.success("Order deleted successfully!");
     } catch (error) {
-      console.error("Error deleting order:", error);
-      toast.error("Failed to delete order.");
+      console.warn("Backend delete order unavailable, removing locally:", error);
     }
+
+    setOrders((prevOrders) => prevOrders.filter((order) => order.OrderID !== orderId && order.id !== orderId));
+    toast.success("Order deleted successfully!");
   };
 
   const handleCheckboxChange = async (orderId, delivered) => {

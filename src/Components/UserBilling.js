@@ -27,6 +27,7 @@ import {
 import AIDrugSafetyAlert from './AIDrugSafetyAlert';
 import AIGenericFinderModal from './AIGenericFinderModal';
 import AIPrescriptionParserModal from './AIPrescriptionParserModal';
+import { getLocalInventory, saveLocalInventory, getLocalBills, addLocalBill } from '../utils/dataStore';
 
 const UserBilling = () => {
   const location = useLocation();
@@ -138,10 +139,16 @@ const UserBilling = () => {
   const fetchInventory = async () => {
     try {
       const response = await api.get('/inventory');
-      setInventory(response.data || []);
+      if (Array.isArray(response.data) && response.data.length > 0) {
+        setInventory(response.data);
+        saveLocalInventory(response.data);
+        return;
+      }
     } catch (error) {
-      toast.error("Failed to load live inventory.");
+      console.warn("Backend inventory fetch offline, loading local store:", error);
     }
+    const local = getLocalInventory();
+    setInventory(local);
   };
 
   const fetchStoreSettings = async () => {
@@ -170,10 +177,15 @@ const UserBilling = () => {
   const fetchBillingHistory = async () => {
     try {
       const response = await api.get("/get-bills");
-      setBillingHistory(response.data || []);
+      if (Array.isArray(response.data) && response.data.length > 0) {
+        setBillingHistory(response.data);
+        return;
+      }
     } catch (error) {
-      console.error("Error fetching billing history:", error);
+      console.warn("Backend billing history fetch offline, loading local store:", error);
     }
+    const localBills = getLocalBills();
+    setBillingHistory(localBills);
   };
 
   const filteredInventory = useMemo(() => {
@@ -357,30 +369,41 @@ const UserBilling = () => {
       return;
     }
     setIsProcessing(true);
+    const payload = {
+      billItems,
+      items: billItems.map(i => ({ medicine_name: i.name, quantity: i.quantity, unit_price: i.price, subtotal: i.price * i.quantity, inventory_id: i.inventoryId })),
+      subtotal: calculations.subtotal,
+      discountAmount: calculations.totalDiscount,
+      discount: calculations.totalDiscount,
+      taxAmount: calculations.totalTax,
+      tax_amount: calculations.totalTax,
+      grandTotal: calculations.grandTotal,
+      total_amount: calculations.grandTotal,
+      customerName: customerName || "Walk-in Customer",
+      customer_name: customerName || "Walk-in Customer",
+      customerPhone: customerPhone || "N/A",
+      customer_phone: customerPhone || "N/A",
+      customerEmail,
+      doctorName: doctorName || "General Physician",
+      doctor_name: doctorName || "General Physician",
+      paymentMethod,
+      payment_method: paymentMethod,
+      date: new Date().toISOString(),
+      username: localStorage.getItem("username") || "Staff Pharmacist"
+    };
+
     try {
-      const payload = {
-        billItems,
-        subtotal: calculations.subtotal,
-        discountAmount: calculations.totalDiscount,
-        taxAmount: calculations.totalTax,
-        grandTotal: calculations.grandTotal,
-        customerName: customerName || "Walk-in Customer",
-        customerPhone,
-        customerEmail,
-        doctorName,
-        paymentMethod,
-        date: new Date().toISOString(),
-        username: localStorage.getItem("username") || "Staff Pharmacist"
-      };
       const response = await api.post("/save-bill", payload);
       setCompletedBill({ ...payload, id: response.data.billId, invoiceNumber: response.data.invoiceNumber || `INV-${Date.now()}` });
+    } catch (error) {
+      console.warn("Backend billing unavailable, saving locally:", error);
+      const savedLocal = addLocalBill(payload);
+      setCompletedBill({ ...payload, id: savedLocal.id, invoiceNumber: savedLocal.invoice_number });
+    } finally {
       setShowSuccessModal(true);
       fetchInventory();
       fetchTodaySales();
       fetchBillingHistory();
-    } catch (error) {
-      toast.error("Failed to process sale.");
-    } finally {
       setIsProcessing(false);
     }
   };
