@@ -56,7 +56,6 @@ const UserBilling = () => {
   const [cardNumber, setCardNumber] = useState("");
   const [cardExpiry, setCardExpiry] = useState("");
   const [cardCvv, setCardCvv] = useState("");
-  const [cardHolder, setCardHolder] = useState("");
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [completedBill, setCompletedBill] = useState(null);

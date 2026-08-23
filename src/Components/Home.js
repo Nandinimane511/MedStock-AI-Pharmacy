@@ -33,7 +33,7 @@ const Home = () => {
     // Fetch live dashboard metrics
     const fetchMetrics = async () => {
       try {
-        const [stockRes, notifRes, ordersRes] = await Promise.allSettled([
+        const [stockRes, , ordersRes] = await Promise.allSettled([
           api.get('/reports/stock'),
           api.get('/notifications'),
           api.get('/orders')
@@ -98,12 +98,6 @@ const Home = () => {
   ];
 
   const cardItems = allCardItems.filter(item => role === 'Admin' || !item.adminOnly);
-
-  const handleContactSubmit = (e) => {
-    e.preventDefault();
-    toast.success("Thank you! Your message has been sent.");
-    e.target.reset();
-  };
 
   return (
     <div className="bg-slate-50 dark:bg-slate-900 min-h-screen font-sans transition-colors duration-300">
