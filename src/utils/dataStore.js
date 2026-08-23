@@ -183,8 +183,26 @@ export const INITIAL_BILLS = [
   }
 ];
 
+export const STORE_BUILD_VERSION = 'v2.5_live_sync_2026';
+
+export function initializeDataStore() {
+  if (typeof window === 'undefined') return;
+  const currentVer = localStorage.getItem('medstock_store_ver');
+  if (currentVer !== STORE_BUILD_VERSION) {
+    localStorage.setItem('medstock_store_ver', STORE_BUILD_VERSION);
+    localStorage.setItem('medstock_inventory', JSON.stringify(INITIAL_INVENTORY));
+    localStorage.setItem('medstock_suppliers', JSON.stringify(INITIAL_SUPPLIERS));
+    localStorage.setItem('medstock_orders', JSON.stringify(INITIAL_ORDERS));
+    localStorage.setItem('medstock_bills', JSON.stringify(INITIAL_BILLS));
+  }
+}
+
+// Auto-run on module load
+initializeDataStore();
+
 // INVENTORY HELPERS
 export function getLocalInventory() {
+  initializeDataStore();
   const stored = localStorage.getItem('medstock_inventory');
   if (stored) {
     try {
@@ -267,11 +285,15 @@ export function deleteLocalSupplier(id) {
 
 // ORDERS HELPERS
 export function getLocalOrders() {
+  initializeDataStore();
   const stored = localStorage.getItem('medstock_orders');
   if (stored) {
     try {
       const parsed = JSON.parse(stored);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const hasMedicines = parsed.some(o => (o.medicines && o.medicines.length > 0) || (o.Medicines && o.Medicines.length > 0));
+        if (hasMedicines) return parsed;
+      }
     } catch (e) {
       console.warn('Failed parsing stored orders', e);
     }
@@ -329,11 +351,12 @@ export function deleteLocalOrder(orderId) {
 
 // BILLS / SALES HELPERS
 export function getLocalBills() {
+  initializeDataStore();
   const stored = localStorage.getItem('medstock_bills');
   if (stored) {
     try {
       const parsed = JSON.parse(stored);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length >= 4) return parsed;
     } catch (e) {
       console.warn('Failed parsing stored bills', e);
     }
