@@ -55,23 +55,22 @@ if (require.main === module) {
 app.post('/api/signup', async (req, res) => {
   const { name, email, password, role } = req.body;
 
-  if (!validator.isEmail(email)) {
+  if (!email || !validator.isEmail(email)) {
     return res.status(400).json({ message: 'Invalid email format' });
   }
 
-  // Check if email already exists with a different role
-  authDB.query('SELECT * FROM users WHERE email = ?', [email], async (err, results) => {
+  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedRole = role || 'User';
+
+  // Check if email already exists
+  authDB.query('SELECT * FROM users WHERE LOWER(email) = ?', [normalizedEmail], async (err, results) => {
     if (err) {
       console.error('Database error:', err);
       return res.status(500).json({ message: 'Database error', error: err });
     }
 
     if (results.length > 0) {
-      if (results[0].role !== role) {
-        return res.status(400).json({ message: `This email is already registered as ${results[0].role}. Please use a different email.` });
-      } else {
-        return res.status(400).json({ message: 'Email already exists' });
-      }
+      return res.status(400).json({ message: 'Email already registered. Please log in.' });
     }
 
     // Hash password before storing
@@ -80,7 +79,7 @@ app.post('/api/signup', async (req, res) => {
     // Insert user into auth_db
     authDB.query(
       'INSERT INTO users (email, name, password, role) VALUES (?, ?, ?, ?)',
-      [email, name, hashedPassword, role],
+      [normalizedEmail, name || 'User', hashedPassword, normalizedRole],
       (err, result) => {
         if (err) {
           console.error('Signup error:', err);
@@ -88,25 +87,24 @@ app.post('/api/signup', async (req, res) => {
         }
 
         // Insert into role-specific database
-        const targetDB = role === 'Admin' ? adminDB : userDB;
+        const targetDB = normalizedRole === 'Admin' ? adminDB : userDB;
         targetDB.query(
           'INSERT INTO users (id, email, password, created_at) VALUES (?, ?, ?, NOW())',
-          [result.insertId, email, hashedPassword],
-          (err) => {
-            if (err) {
-              console.error('Error syncing user data:', err);
-              return res.status(500).json({ message: 'Error syncing user data' });
+          [result.insertId, normalizedEmail, hashedPassword],
+          (syncErr) => {
+            if (syncErr) {
+              console.warn('Note: role table sync warning:', syncErr.message);
             }
 
             const token = jwt.sign(
-              { id: result.insertId, email, role },
+              { id: result.insertId, email: normalizedEmail, role: normalizedRole },
               SECRET_KEY,
               { expiresIn: '1d' }
             );
 
             res.status(201).json({
               message: 'Signup successful',
-              user: { id: result.insertId, name, email, role },
+              user: { id: result.insertId, name: name || normalizedEmail.split('@')[0], email: normalizedEmail, role: normalizedRole },
               token,
             });
           }
@@ -116,19 +114,28 @@ app.post('/api/signup', async (req, res) => {
   });
 });
 
-
 // User Login
 app.post('/api/login', (req, res) => {
-  const { email, password, role } = req.body; // Now role is required during login
+  const { email, password, role } = req.body;
 
-  authDB.query('SELECT * FROM users WHERE email = ? AND role = ?', [email, role], async (err, results) => {
+  if (!email || !password) {
+    return res.status(400).json({ message: 'Email and password are required.' });
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  const query = role 
+    ? 'SELECT * FROM users WHERE LOWER(email) = ? AND role = ?' 
+    : 'SELECT * FROM users WHERE LOWER(email) = ?';
+  const params = role ? [normalizedEmail, role] : [normalizedEmail];
+
+  authDB.query(query, params, async (err, results) => {
     if (err) {
       console.error('Database error:', err);
       return res.status(500).json({ message: 'Database error', error: err });
     }
 
     if (results.length === 0) {
-      return res.status(401).json({ message: 'Invalid email, password, or role' });
+      return res.status(401).json({ message: 'Invalid email, password, or role selection.' });
     }
 
     const user = results[0];
@@ -136,7 +143,7 @@ app.post('/api/login', (req, res) => {
     // Compare hashed password
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      return res.status(401).json({ message: 'Invalid email, password, or role' });
+      return res.status(401).json({ message: 'Invalid email or password.' });
     }
 
     const token = jwt.sign(
@@ -147,7 +154,7 @@ app.post('/api/login', (req, res) => {
 
     res.status(200).json({
       message: 'Login successful',
-      user: { id: user.id, name: user.name, email: user.email, role: user.role },
+      user: { id: user.id, name: user.name || user.email.split('@')[0], email: user.email, role: user.role },
       token,
       redirectTo: user.role === 'Admin' ? '/admin/dashboard' : '/user/home',
     });
