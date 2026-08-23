@@ -10,6 +10,7 @@ import {
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 import AIDrugSafetyAlert from './AIDrugSafetyAlert';
+import { scanPrescriptionClientSide } from '../utils/clientAiService';
 
 export default function PrescriptionScanner() {
   const navigate = useNavigate();
@@ -159,23 +160,47 @@ export default function PrescriptionScanner() {
         samplePreset: selectedPreset
       };
 
-      const response = await api.post('/ai/scan-prescription', payload);
-      setScanResult(response.data);
-      setMedicinesList(response.data.extractedMedicines || []);
+      try {
+        const response = await api.post('/ai/scan-prescription', payload);
+        if (response.data && response.data.extractedMedicines) {
+          setScanResult(response.data);
+          setMedicinesList(response.data.extractedMedicines || []);
+          
+          if (response.data.detectedPatient) {
+            setPatientInfo(prev => ({
+              ...prev,
+              patientName: response.data.detectedPatient,
+              doctorName: response.data.detectedDoctor || prev.doctorName
+            }));
+          }
+
+          toast.success(`OCR Scan Complete! Extracted ${response.data.medicinesDetected} medicines for ${response.data.detectedPatient || 'patient'}.`);
+          return;
+        }
+      } catch (apiErr) {
+        console.warn('Backend OCR unreachable, switching to Client-Side AI Vision engine...', apiErr);
+      }
+
+      // Client-Side AI Vision Engine Fallback
+      toast('Processing with Client-Side AI Vision Engine...', { icon: '🤖' });
+      const clientResult = await scanPrescriptionClientSide(previewUrl || selectedPreset || '');
       
-      if (response.data.detectedPatient) {
+      setScanResult(clientResult);
+      setMedicinesList(clientResult.extractedMedicines || []);
+
+      if (clientResult.detectedPatient) {
         setPatientInfo(prev => ({
           ...prev,
-          patientName: response.data.detectedPatient,
-          doctorName: response.data.detectedDoctor || prev.doctorName
+          patientName: clientResult.detectedPatient,
+          doctorName: clientResult.detectedDoctor || prev.doctorName
         }));
       }
 
-      toast.success(`OCR Scan Complete! Extracted ${response.data.medicinesDetected} medicines for ${response.data.detectedPatient || 'patient'}.`);
+      toast.success(`Vision OCR Complete! Extracted ${clientResult.medicinesDetected} medicines for ${clientResult.detectedPatient || 'patient'}.`);
+
     } catch (error) {
       console.error('Scan error:', error);
-      const errMsg = error.response?.data?.error || error.message || 'Failed to scan prescription. Please try again.';
-      toast.error(errMsg);
+      toast.error('Error analyzing image. Please try another image.');
     } finally {
       setIsScanning(false);
     }
