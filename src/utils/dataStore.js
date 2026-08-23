@@ -34,9 +34,42 @@ export const INITIAL_SUPPLIERS = [
 ];
 
 export const INITIAL_ORDERS = [
-  { OrderID: 101, SupplierID: 1, DeliveryDate: '2026-08-28', Status: 'Confirmed', TotalAmount: 4850.00, medicines: [{ id: 1, name: 'Amoxicillin 500mg', quantity: 50, price: 85.00 }] },
-  { OrderID: 102, SupplierID: 2, DeliveryDate: '2026-08-25', Status: 'Shipped', TotalAmount: 3200.00, medicines: [{ id: 13, name: 'Levocetirizine 5mg', quantity: 40, price: 45.00 }] },
-  { OrderID: 103, SupplierID: 3, DeliveryDate: '2026-08-30', Status: 'Pending', TotalAmount: 8280.00, medicines: [{ id: 11, name: 'Telmisartan 40mg', quantity: 60, price: 92.00 }] }
+  { 
+    OrderID: 101, 
+    id: 101,
+    SupplierID: 1, 
+    DeliveryDate: '2026-08-28', 
+    Status: 'Pending', 
+    Delivery_Status: false,
+    TotalPrice: 4250.00,
+    TotalAmount: 4250.00, 
+    Medicines: [{ id: 1, name: 'Amoxicillin 500mg', category: 'Antibiotic', quantity: 50, price: 85.00 }],
+    medicines: [{ id: 1, name: 'Amoxicillin 500mg', category: 'Antibiotic', quantity: 50, price: 85.00 }] 
+  },
+  { 
+    OrderID: 102, 
+    id: 102,
+    SupplierID: 2, 
+    DeliveryDate: '2026-08-25', 
+    Status: 'Delivered', 
+    Delivery_Status: true,
+    TotalPrice: 1800.00,
+    TotalAmount: 1800.00, 
+    Medicines: [{ id: 13, name: 'Levocetirizine 5mg', category: 'Respiratory', quantity: 40, price: 45.00 }],
+    medicines: [{ id: 13, name: 'Levocetirizine 5mg', category: 'Respiratory', quantity: 40, price: 45.00 }] 
+  },
+  { 
+    OrderID: 103, 
+    id: 103,
+    SupplierID: 3, 
+    DeliveryDate: '2026-08-30', 
+    Status: 'Pending', 
+    Delivery_Status: false,
+    TotalPrice: 5520.00,
+    TotalAmount: 5520.00, 
+    Medicines: [{ id: 11, name: 'Telmisartan 40mg', category: 'Cardiovascular', quantity: 60, price: 92.00 }],
+    medicines: [{ id: 11, name: 'Telmisartan 40mg', category: 'Cardiovascular', quantity: 60, price: 92.00 }] 
+  }
 ];
 
 export const INITIAL_BILLS = [
@@ -159,18 +192,48 @@ export function getLocalOrders() {
 export function addLocalOrder(order) {
   const current = getLocalOrders();
   const newId = current.length > 0 ? Math.max(...current.map(o => parseInt(o.OrderID || o.id, 10) || 0)) + 1 : 101;
+  const meds = order.medicines || order.Medicines || [];
+  const calcTotal = meds.reduce((sum, m) => sum + ((parseFloat(m.price) || 0) * (parseInt(m.quantity, 10) || 1)), 0);
+  const total = parseFloat(order.TotalPrice) || parseFloat(order.TotalAmount) || calcTotal || 0;
+
   const newOrder = {
     OrderID: newId,
     id: newId,
     SupplierID: order.SupplierID || 1,
     DeliveryDate: order.DeliveryDate || new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0],
     Status: order.Status || 'Confirmed',
-    TotalAmount: order.TotalAmount || 0,
-    medicines: order.medicines || []
+    Delivery_Status: Boolean(order.Delivery_Status),
+    TotalPrice: total,
+    TotalAmount: total,
+    Medicines: meds,
+    medicines: meds
   };
   const updated = [newOrder, ...current];
   localStorage.setItem('medstock_orders', JSON.stringify(updated));
   return newOrder;
+}
+
+export function updateLocalOrderStatus(orderId, delivered) {
+  const current = getLocalOrders();
+  const updated = current.map(o => {
+    if (o.OrderID === orderId || o.id === orderId || o.OrderID === parseInt(orderId, 10) || o.id === parseInt(orderId, 10)) {
+      return {
+        ...o,
+        Delivery_Status: delivered,
+        Status: delivered ? 'Delivered' : 'Pending'
+      };
+    }
+    return o;
+  });
+  localStorage.setItem('medstock_orders', JSON.stringify(updated));
+  return updated;
+}
+
+export function deleteLocalOrder(orderId) {
+  const current = getLocalOrders();
+  const updated = current.filter(o => o.OrderID !== orderId && o.id !== orderId && o.OrderID !== parseInt(orderId, 10) && o.id !== parseInt(orderId, 10));
+  localStorage.setItem('medstock_orders', JSON.stringify(updated));
+  return true;
 }
 
 // BILLS / SALES HELPERS
