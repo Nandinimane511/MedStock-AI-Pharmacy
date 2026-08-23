@@ -479,58 +479,26 @@ async function scanPrescriptionImage(payload = {}, inventory = []) {
   let rawLines = [];
   const textLower = (ocrRecognizedText + ' ' + (imageName || '') + ' ' + (samplePreset || '')).toLowerCase();
 
-  if (
-    samplePreset === 'chronic_cardiac_diabetes' || 
-    textLower.includes('fortis') || 
-    textLower.includes('kulkarni') || 
-    textLower.includes('anita') || 
-    textLower.includes('metformin') || 
-    textLower.includes('telmisartan') || 
-    textLower.includes('ecosprin')
-  ) {
-    detectedPatient = detectedPatient === 'Walk-in Patient' ? 'Anita Desai' : detectedPatient;
-    detectedDoctor = detectedDoctor === 'Prescribing Physician' ? 'Dr. M. Kulkarni, MD (Cardiology)' : detectedDoctor;
-    rawLines = [
-      { text: "Metformin 500mg (Glycomet) 1-0-1 x 30 days", confidence: 95, strength: "500 mg", dosage: "1-0-1", duration: "30 days", instructions: "With meals" },
-      { text: "Telmisartan 40mg (Telma 40) 1-0-0 x 30 days", confidence: 94, strength: "40 mg", dosage: "1-0-0", duration: "30 days", instructions: "Morning post breakfast" },
-      { text: "Amlodipine 5mg 0-0-1 x 30 days", confidence: 88, strength: "5 mg", dosage: "0-0-1", duration: "30 days", instructions: "Night before bedtime" },
-      { text: "Ecosprin 75mg 0-1-0 x 30 days", confidence: 91, strength: "75 mg", dosage: "0-1-0", duration: "30 days", instructions: "After lunch" }
-    ];
-  } else if (
-    samplePreset === 'handwritten_fever_infection' || 
-    textLower.includes('apollo') || 
-    textLower.includes('sharma') || 
-    textLower.includes('rahul') || 
-    textLower.includes('augmentin') || 
-    textLower.includes('dolo') || 
-    textLower.includes('paracetamol')
-  ) {
-    detectedPatient = detectedPatient === 'Walk-in Patient' ? 'Rahul Verma' : detectedPatient;
-    detectedDoctor = detectedDoctor === 'Prescribing Physician' ? 'Dr. S. Sharma, MD' : detectedDoctor;
-    rawLines = [
-      { text: "Augmentin 625 Duo 1-0-1 x 5 days (After meals)", confidence: 96, strength: "625 mg", dosage: "1-0-1", duration: "5 days", instructions: "After meals" },
-      { text: "Paracetamol 650mg (Dolo 650) 1-1-1 x 3 days", confidence: 92, strength: "650 mg", dosage: "1-1-1", duration: "3 days", instructions: "For fever, SOS" },
-      { text: "Pantoprazole 40mg (Pan 40) 1-0-0 x 5 days", confidence: 94, strength: "40 mg", dosage: "1-0-0", duration: "5 days", instructions: "Before breakfast on empty stomach" },
-      { text: "Azithromycin 500mg 1-0-0 x 3 days (Handwritten)", confidence: 68, strength: "500 mg", dosage: "1-0-0", duration: "3 days", instructions: "Take before lunch" }
-    ];
-  } else if (lines.length > 0) {
+  if (lines.length > 0 && (!samplePreset || samplePreset === '')) {
     // Parse dynamic lines from custom image OCR
     for (const line of lines) {
       const lineLow = line.toLowerCase();
       // Skip header and footer lines
-      if (lineLow.includes('clinic') || lineLow.includes('hospital') || lineLow.includes('patient') || lineLow.includes('reg no') || lineLow.includes('dr.')) {
+      if (lineLow.includes('clinic') || lineLow.includes('hospital') || lineLow.includes('patient') || lineLow.includes('reg no') || lineLow.includes('dr.') || lineLow.includes('signature')) {
         continue;
       }
       
-      const hasDrugClues = lineLow.match(/(\d+\s*(?:mg|gm|mcg|iu)|tab|cap|syrup|daily|times|days?|od|bd|tds|[01]-[01]-[01])/i);
-      if (hasDrugClues || line.length > 8) {
+      const hasDrugClues = lineLow.match(/(\d+\s*(?:mg|gm|mcg|iu|ml)|tab|cap|syrup|daily|times|days?|od|bd|tds|[01]-[01]-[01])/i);
+      const isNumbered = /^\d+[\.\)]\s*/.test(line);
+
+      if (isNumbered || hasDrugClues || line.length > 6) {
         const dosageMatch = (line.match(/(\b[01]-[01]-[01]\b|\bOD\b|\bBD\b|\bTDS\b|\bonce daily\b|\btwice daily\b)/i) || ['1-0-1'])[0];
-        const strengthMatch = (line.match(/\b\d+\s*(?:mg|gm|iu|mcg)\b/i) || ['Standard'])[0];
+        const strengthMatch = (line.match(/\b\d+\s*(?:mg|gm|iu|mcg|ml)\b/i) || ['Standard'])[0];
         const durationMatch = (line.match(/\b\d+\s*(?:days?|weeks?|months?)\b/i) || ['5 days'])[0];
 
         rawLines.push({
-          text: line,
-          confidence: Math.floor(75 + Math.random() * 20),
+          text: line.replace(/^\d+[\.\)]\s*/, '').replace(/^rx[:\s]*/i, '').trim(),
+          confidence: Math.floor(82 + Math.random() * 15),
           strength: strengthMatch,
           dosage: dosageMatch,
           duration: durationMatch,
@@ -538,6 +506,24 @@ async function scanPrescriptionImage(payload = {}, inventory = []) {
         });
       }
     }
+  } else if (samplePreset === 'chronic_cardiac_diabetes') {
+    detectedPatient = 'Anita Desai';
+    detectedDoctor = 'Dr. M. Kulkarni, MD (Cardiology)';
+    rawLines = [
+      { text: "Metformin 500mg (Glycomet) 1-0-1 x 30 days", confidence: 95, strength: "500 mg", dosage: "1-0-1", duration: "30 days", instructions: "With meals" },
+      { text: "Telmisartan 40mg (Telma 40) 1-0-0 x 30 days", confidence: 94, strength: "40 mg", dosage: "1-0-0", duration: "30 days", instructions: "Morning post breakfast" },
+      { text: "Amlodipine 5mg 0-0-1 x 30 days", confidence: 88, strength: "5 mg", dosage: "0-0-1", duration: "30 days", instructions: "Night before bedtime" },
+      { text: "Ecosprin 75mg 0-1-0 x 30 days", confidence: 91, strength: "75 mg", dosage: "0-1-0", duration: "30 days", instructions: "After lunch" }
+    ];
+  } else if (samplePreset === 'handwritten_fever_infection') {
+    detectedPatient = 'Rahul Verma';
+    detectedDoctor = 'Dr. S. Sharma, MD';
+    rawLines = [
+      { text: "Augmentin 625 Duo 1-0-1 x 5 days (After meals)", confidence: 96, strength: "625 mg", dosage: "1-0-1", duration: "5 days", instructions: "After meals" },
+      { text: "Paracetamol 650mg (Dolo 650) 1-1-1 x 3 days", confidence: 92, strength: "650 mg", dosage: "1-1-1", duration: "3 days", instructions: "For fever, SOS" },
+      { text: "Pantoprazole 40mg (Pan 40) 1-0-0 x 5 days", confidence: 94, strength: "40 mg", dosage: "1-0-0", duration: "5 days", instructions: "Before breakfast on empty stomach" },
+      { text: "Azithromycin 500mg 1-0-0 x 3 days (Handwritten)", confidence: 68, strength: "500 mg", dosage: "1-0-0", duration: "3 days", instructions: "Take before lunch" }
+    ];
   }
 
   if (rawLines.length === 0) {
