@@ -2,7 +2,7 @@ import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { FaTimes } from 'react-icons/fa';
 import mslogo from '../Assets/mslogo.png';
-import { FaBox, FaTruck, FaHome, FaChartBar, FaMoneyBill, FaBell, FaUser } from 'react-icons/fa';
+import { FaBox, FaTruck, FaHome, FaChartBar, FaMoneyBill, FaBell, FaUser, FaFilePrescription } from 'react-icons/fa';
 import { useRole } from './RoleContext';
 
 const Sidebar = ({ isSidebarOpen, closeSidebar }) => {
@@ -11,6 +11,7 @@ const Sidebar = ({ isSidebarOpen, closeSidebar }) => {
 
   const sidebarItems = [
     { id: 'inventory', label: 'Inventory', icon: <FaBox />, path: '/Inventory', allowedRoles: ['Admin'] },
+    { id: 'scanner', label: 'AI Prescription Scanner', icon: <FaFilePrescription className="text-teal-500" />, path: '/PrescriptionScanner', allowedRoles: ['Admin', 'User'] },
     { id: 'orders', label: 'Orders', icon: <FaTruck />, path: '/Orders', allowedRoles: ['Admin'] },
     { id: 'suppliers', label: 'Suppliers', icon: <FaHome />, path: '/Supplier', allowedRoles: ['Admin'] },
     { id: 'reports', label: 'Reports', icon: <FaChartBar />, path: '/Reports', allowedRoles: ['Admin'] },

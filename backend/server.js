@@ -19,7 +19,8 @@ const razorpay = new Razorpay({
 });
 
 const port = 5000;
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(cors());
 
 // Middleware
@@ -27,7 +28,8 @@ app.use(cors({
   origin: 'http://localhost:3000', // Allow requests from React frontend
 }));
 
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
 // Auth Middleware
 const verifyToken = (req, res, next) => {
@@ -42,10 +44,12 @@ const verifyToken = (req, res, next) => {
   }
 };
 
-// Start the server
-app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
-});
+// Start the server if executed directly
+if (require.main === module) {
+  app.listen(port, () => {
+    console.log(`Server running at http://localhost:${port}`);
+  });
+}
 
 // User Signup
 app.post('/api/signup', async (req, res) => {
@@ -167,35 +171,36 @@ app.get('/api/dashboard', (req, res) => {
 });
 
 // Forget pass
-app.post("/api/reset-password", (req, res) => {
+app.post("/api/reset-password", async (req, res) => {
   const { email, newPassword } = req.body;
 
-  //  Step 1: Check if email and password are provided
   if (!email || !newPassword) {
     return res.status(400).json({ message: "Email and new password are required!" });
   }
 
-  //  Step 2: Log incoming request data for debugging
-  console.log("Reset Password Request Received:");
-  console.log("Email:", email);
-  console.log("New Password:", newPassword);
+  try {
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const query = "UPDATE users SET password = ? WHERE email = ?";
+    
+    authDB.query(query, [hashedPassword, email], (err, result) => {
+      if (err) {
+        console.error("❌ Database Error:", err);
+        return res.status(500).json({ message: "Server error while resetting password" });
+      }
 
-  //  Step 3: Update password in database
-  const query = "UPDATE users SET password = ? WHERE email = ?";
-  db.query(query, [newPassword, email], (err, result) => {
-    if (err) {
-      console.error("❌ Database Error:", err);
-      return res.status(500).json({ message: "Server error while resetting password" });
-    }
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ message: "User not found" });
+      }
 
-    if (result.affectedRows === 0) {
-      console.log("❌ No user found with this email:", email);
-      return res.status(404).json({ message: "User not found" });
-    }
+      // Also sync to role-specific DBs if present
+      adminDB.query(query, [hashedPassword, email], () => {});
+      userDB.query(query, [hashedPassword, email], () => {});
 
-    console.log("✅ Password reset successful for:", email);
-    res.json({ message: "Password reset successful!" });
-  });
+      res.json({ message: "Password reset successful!" });
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Server error while resetting password" });
+  }
 });
 
 //INVENTORY PAGE/////////////////////////////////////
@@ -318,54 +323,126 @@ app.post("/api/update-inventory", (req, res) => {
 });
 
 
-// Save a new bill
+// Save a new bill (Pharmacy POS)
 app.post("/api/save-bill", verifyToken, async (req, res) => {
-  let { billItems, totalAmount, date, username, paymentType } = req.body;
+  let { 
+    billItems, 
+    totalAmount, 
+    subtotal, 
+    discountAmount, 
+    taxAmount, 
+    date, 
+    username, 
+    paymentType, 
+    paymentMethod,
+    customerName,
+    customerPhone,
+    customerEmail,
+    doctorName,
+    paymentDetails
+  } = req.body;
   const user = req.user;
 
-  if (!billItems || !totalAmount || !date || !username) {
-    return res.status(400).json({ message: "Missing required fields." });
+  if (!billItems || !Array.isArray(billItems) || billItems.length === 0) {
+    return res.status(400).json({ message: "No items in bill cart." });
   }
 
-  const normalizedDate = new Date(date).toISOString().split('T')[0];
-  totalAmount = parseFloat(totalAmount);
+  const effectiveTotal = parseFloat(totalAmount || req.body.grandTotal || 0);
+  if (isNaN(effectiveTotal) || effectiveTotal <= 0) {
+    return res.status(400).json({ message: "Invalid total amount." });
+  }
 
-  const jsonData = JSON.stringify({
-    billItems,
-    totalAmount,
-    date: normalizedDate,
-    username,
-    paymentType
-  });
+  const normalizedDate = date ? new Date(date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+  const methodStr = paymentMethod || paymentType || 'Cash';
+  const invoiceNumber = `INV-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-${Math.floor(10000 + Math.random() * 90000)}`;
 
   const conn = await medstockDB.promise().getConnection();
   try {
     await conn.beginTransaction();
 
-    // 1. Decrement inventory
+    // 1. Validate & Decrement inventory
     for (const item of billItems) {
-      const [results] = await conn.query("SELECT quantity FROM inventory WHERE name = ?", [item.name]);
-      if (results.length === 0) throw new Error(`Item ${item.name} not found in inventory.`);
-      if (results[0].quantity < item.quantity) throw new Error(`Insufficient stock for ${item.name}.`);
+      let results = [];
+      if (item.inventoryId || item.id) {
+        [results] = await conn.query("SELECT id, name, quantity, price FROM inventory WHERE id = ?", [item.inventoryId || item.id]);
+      }
+      if (!results || results.length === 0) {
+        [results] = await conn.query("SELECT id, name, quantity, price FROM inventory WHERE name = ?", [item.name]);
+      }
+      if (!results || results.length === 0) {
+        [results] = await conn.query("SELECT id, name, quantity, price FROM inventory WHERE name LIKE ?", [`%${item.name.split(' ')[0]}%`]);
+      }
 
-      await conn.query("UPDATE inventory SET quantity = quantity - ? WHERE name = ?", [item.quantity, item.name]);
+      if (results && results.length > 0) {
+        const inv = results[0];
+        if (inv.quantity < item.quantity) {
+          throw new Error(`Insufficient stock for "${inv.name}". Available: ${inv.quantity}, requested: ${item.quantity}.`);
+        }
+        await conn.query("UPDATE inventory SET quantity = quantity - ? WHERE id = ?", [item.quantity, inv.id]);
+      } else {
+        console.warn(`[POS Billing] Item "${item.name}" not found in inventory catalog - dispensing as non-catalog item.`);
+      }
     }
 
-    // 2. Save bill
+    // 2. Fetch business settings
+    const [settings] = await conn.query('SELECT * FROM system_settings WHERE id = 1');
+    const businessDetails = settings[0] || {
+      business_name: 'MedStock Pharmacy & Healthcare',
+      business_address: '124, Healthcare Boulevard, Medical Enclave',
+      business_gstin: '27AABCU9603R1ZM',
+      business_contact: '+91 98765 43210',
+      tax_rate: 18.00
+    };
+
+    // 3. Construct structured bill payload
+    const structuredBill = {
+      invoiceNumber,
+      billItems,
+      subtotal: parseFloat(subtotal || effectiveTotal),
+      discountAmount: parseFloat(discountAmount || 0),
+      taxAmount: parseFloat(taxAmount || 0),
+      totalAmount: effectiveTotal,
+      grandTotal: effectiveTotal,
+      date: normalizedDate,
+      createdAt: new Date().toISOString(),
+      username: username || user.name || user.email || "Pharmacist",
+      userEmail: user.email,
+      paymentType: methodStr,
+      paymentMethod: methodStr,
+      customerName: customerName || "Walk-in Customer",
+      customerPhone: customerPhone || "",
+      customerEmail: customerEmail || "",
+      doctorName: doctorName || "",
+      paymentDetails: paymentDetails || {},
+      businessDetails
+    };
+
+    const jsonData = JSON.stringify(structuredBill);
+
+    // 4. Save to userRole_billingPage
     const sql = `INSERT INTO userRole_billingPage (name, quantity, price) VALUES (?, ?, ?)`;
     const [result] = await conn.query(sql, ["bill", 1, jsonData]);
 
-    // 3. Log to sales table
+    // 5. Log to sales table
     await conn.query(
       `INSERT INTO sales (user_email, role, payment_method, total_amount, source) VALUES (?, ?, ?, ?, ?)`,
-      [user.email, user.role, paymentType, totalAmount, 'manual']
+      [user.email, user.role, methodStr, effectiveTotal, 'pos_billing']
     );
 
     await conn.commit();
-    res.status(201).json({ message: "Bill saved successfully", billId: result.insertId });
+
+    res.status(201).json({ 
+      success: true,
+      message: "Bill processed and inventory updated successfully.", 
+      billId: result.insertId,
+      invoiceNumber,
+      totalAmount: effectiveTotal,
+      businessDetails,
+      billData: { ...structuredBill, id: result.insertId }
+    });
   } catch (error) {
     await conn.rollback();
-    console.error("Database Error:", error);
+    console.error("Database Error processing bill:", error);
     res.status(500).json({ message: "Failed to save bill and update inventory", error: error.message });
   } finally {
     conn.release();
@@ -475,20 +552,24 @@ app.get('/api/reports/sales', (req, res) => {
 
   if (range === 'daily') {
     salesQuery = `
-      SELECT name, SUM(quantity) AS quantity, price
+      SELECT DATE(sale_date) as sale_date, payment_method, COUNT(*) AS count, SUM(total_amount) AS total_amount
       FROM sales
       WHERE DATE(sale_date) = CURDATE()
-      GROUP BY name, price
+      GROUP BY DATE(sale_date), payment_method
     `;
   } else if (range === 'monthly') {
     salesQuery = `
-      SELECT name, SUM(quantity) AS quantity, price
+      SELECT DATE(sale_date) as sale_date, payment_method, COUNT(*) AS count, SUM(total_amount) AS total_amount
       FROM sales
       WHERE MONTH(sale_date) = MONTH(CURDATE()) AND YEAR(sale_date) = YEAR(CURDATE())
-      GROUP BY name, price
+      GROUP BY DATE(sale_date), payment_method
     `;
   } else {
-    return res.status(400).json({ error: 'Invalid range' });
+    salesQuery = `
+      SELECT id, user_email, payment_method, total_amount, source, sale_date
+      FROM sales
+      ORDER BY sale_date DESC
+    `;
   }
 
   medstockDB.query(salesQuery, (err, results) => {
@@ -503,7 +584,7 @@ app.get('/api/reports/sales', (req, res) => {
 // Today's Total Payout (calculate and save)
 app.get('/api/reports/todays-payout', (req, res) => {
   const payoutQuery = `
-    SELECT SUM(quantity * price) AS total_payout
+    SELECT COALESCE(SUM(total_amount), 0) AS total_payout
     FROM sales
     WHERE DATE(sale_date) = CURDATE()
   `;
@@ -514,14 +595,14 @@ app.get('/api/reports/todays-payout', (req, res) => {
       return res.status(500).json({ error: 'Database error' });
     }
 
-    const totalPayout = results[0].total_payout || 0;
+    const totalPayout = results && results[0] ? parseFloat(results[0].total_payout) || 0 : 0;
 
     // Insert into payouts table
     const insertQuery = `
       INSERT INTO payouts (payout_amount, payout_date, created_by)
       VALUES (?, CURDATE(), ?)
     `;
-    const createdBy = 'system'; // You can change or pass from frontend
+    const createdBy = 'system';
 
     medstockDB.query(insertQuery, [totalPayout, createdBy], (insertErr) => {
       if (insertErr) {
@@ -559,12 +640,22 @@ app.get('/api/reports/low-stock', (req, res) => {
   });
 });
 
+// Alias for low stock items
+app.get('/api/reports/low-stock-items', (req, res) => {
+  medstockDB.query('SELECT * FROM inventory WHERE quantity <= threshold', (err, results) => {
+    if (err) {
+      return res.status(500).json({ error: 'Database error' });
+    }
+    res.json(results);
+  });
+});
+
 // Fetch expired items to reports page
 app.get('/api/reports/expired-items', async (req, res) => {
   try {
-    const currentDate = new Date().toISOString().split('T')[0]; // Get today's date in YYYY-MM-DD format
-    const [expiredItems] = await medstockDB.query(
-      'SELECT * FROM Inventory WHERE expiryDate < ?',
+    const currentDate = new Date().toISOString().split('T')[0];
+    const [expiredItems] = await medstockDB.promise().query(
+      'SELECT * FROM inventory WHERE expiryDate < ?',
       [currentDate]
     );
     res.json(expiredItems);
@@ -590,14 +681,26 @@ app.get("/api/suppliers", (req, res) => {
 
 // Add a new supplier
 app.post("/api/suppliers", (req, res) => {
-  const { SupplierID, SupplierName, ContactPerson, PhoneNumber, EmailAddress, Address } = req.body;
-  const query = `INSERT INTO Suppliers (SupplierID, SupplierName, ContactPerson, PhoneNumber, EmailAddress, Address, LastDeliveryDate) VALUES (?, ?, ?, ?, ?, ?, CURDATE())`;
-  medstockDB.query(query, [SupplierID, SupplierName, ContactPerson, PhoneNumber, EmailAddress, Address], (err, result) => {
+  const { SupplierID, SupplierName, ContactPerson, PhoneNumber, EmailAddress, Address, LastDeliveryDate } = req.body;
+  const deliveryDate = LastDeliveryDate || new Date().toISOString().split('T')[0];
+  
+  let query = '';
+  let params = [];
+
+  if (SupplierID) {
+    query = `INSERT INTO Suppliers (SupplierID, SupplierName, ContactPerson, PhoneNumber, EmailAddress, Address, LastDeliveryDate) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+    params = [SupplierID, SupplierName, ContactPerson, PhoneNumber, EmailAddress, Address, deliveryDate];
+  } else {
+    query = `INSERT INTO Suppliers (SupplierName, ContactPerson, PhoneNumber, EmailAddress, Address, LastDeliveryDate) VALUES (?, ?, ?, ?, ?, ?)`;
+    params = [SupplierName, ContactPerson, PhoneNumber, EmailAddress, Address, deliveryDate];
+  }
+
+  medstockDB.query(query, params, (err, result) => {
     if (err) {
       console.error("Error adding supplier:", err);
-      res.status(500).send("Error adding supplier");
+      res.status(500).json({ message: "Error adding supplier", error: err.message });
     } else {
-      res.send("Supplier added successfully");
+      res.status(201).json({ message: "Supplier added successfully", id: result.insertId });
     }
   });
 });
@@ -646,7 +749,9 @@ app.get("/api/get-delivered-orders", async (req, res) => {
     console.error("Error fetching delivered orders:", error);
     res.status(500).json({ error: error.message });
   }
-});// Get previous bills
+});
+
+// Get previous bills
 app.post("/api/generate-bill", verifyToken, async (req, res) => {
   try {
     const { orderID, paymentType } = req.body;
@@ -874,7 +979,7 @@ app.get("/api/notifications", (req, res) => {
 
 
 //USER PAGE///////////////////////////////////////////////
-// ✅ GET all users
+// GET all users
 app.get("/api/users", (req, res) => {
   medstockDB.query("SELECT * FROM user_data ORDER BY id DESC", (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
@@ -882,7 +987,7 @@ app.get("/api/users", (req, res) => {
   });
 });
 
-// ✅ ADD new user
+// ADD new user
 app.post("/api/users", (req, res) => {
   const { name, role, email, phone } = req.body;
   medstockDB.query(
@@ -895,7 +1000,7 @@ app.post("/api/users", (req, res) => {
   );
 });
 
-// ✅ UPDATE user
+// UPDATE user
 app.put("/api/users/:id", (req, res) => {
   const { name, role, email, phone } = req.body;
   const { id } = req.params;
@@ -909,7 +1014,7 @@ app.put("/api/users/:id", (req, res) => {
   );
 });
 
-// ✅ DELETE user
+// DELETE user
 app.delete("/api/users/:id", (req, res) => {
   const { id } = req.params;
   medstockDB.query("DELETE FROM user_data WHERE id = ?", [id], (err, result) => {
@@ -920,7 +1025,7 @@ app.delete("/api/users/:id", (req, res) => {
 
 
 ///////////////////////////////////////////////////ORDERS //////////////////////
-// ✅ GET all orders with grouped medicines
+// GET all orders with grouped medicines
 app.get("/api/orders", async (req, res) => {
   try {
     // Fetch all orders
@@ -990,7 +1095,7 @@ const formatDate = (date) => {
 
 
 
-// ✅ POST a new order
+// POST a new order
 // ORDER CREATION ROUTE 
 app.post('/api/orders', async (req, res) => {
   const { OrderID, SupplierID, DeliveryDate, TotalPrice, medicines } = req.body;
@@ -1048,11 +1153,11 @@ app.post('/api/orders', async (req, res) => {
     );
 
     await conn.commit();
-    res.status(201).json({ message: "✅ Order added successfully!" });
+    res.status(201).json({ message: "Order added successfully!" });
 
   } catch (err) {
     await conn.rollback();
-    console.error("❌ Error adding order:", err);
+    console.error("Error adding order:", err);
     res.status(500).json({ message: "Error adding order", details: err.message });
   } finally {
     conn.release();
@@ -1089,7 +1194,7 @@ app.post('/api/orders/deliver/:orderID', async (req, res) => {
       console.log(`Medicine Name: ${med.Name}, Medicine ID: ${med.InventoryID}`);
 
       if (!med.InventoryID) {
-        console.log("❌ InventoryID not found for this medicine, skipping update.");
+        console.log("InventoryID not found for this medicine, skipping update.");
         continue; // Skip if InventoryID is not found
       }
 
@@ -1098,9 +1203,9 @@ app.post('/api/orders/deliver/:orderID', async (req, res) => {
         const response = await axios.put(`http://localhost:5000/api/inventory/update/${med.InventoryID}`, {
           quantity: med.Quantity,
         });
-        console.log(`✅ Successfully updated inventory for Medicine ID: ${med.InventoryID}`);
+        console.log(`Successfully updated inventory for Medicine ID: ${med.InventoryID}`);
       } catch (err) {
-        console.error("❌ Failed to update inventory for Medicine ID:", med.InventoryID, err.response.data);
+        console.error("Failed to update inventory for Medicine ID:", med.InventoryID, err.response.data);
       }
     }
 
@@ -1111,10 +1216,10 @@ app.post('/api/orders/deliver/:orderID', async (req, res) => {
     );
 
     await conn.commit();
-    res.status(200).json({ message: "✅ Order delivered successfully and inventory updated!" });
+    res.status(200).json({ message: "Order delivered successfully and inventory updated!" });
   } catch (err) {
     await conn.rollback();
-    console.error("❌ Delivery failed:", err);
+    console.error("Delivery failed:", err);
     res.status(500).json({ message: "Error during delivery", error: err.message });
   } finally {
     conn.release();
@@ -1125,7 +1230,6 @@ app.post('/api/orders/deliver/:orderID', async (req, res) => {
 
 // PUT - Mark order as delivered and update inventory
 // Consolidated Delivery Endpoint
-// PUT - Mark order as delivered and update inventory
 app.put("/api/orders/:orderId/deliver", async (req, res) => {
   const { orderId } = req.params;
   const { delivered } = req.body;
@@ -1267,7 +1371,7 @@ app.delete('/api/orders/:orderID', async (req, res) => {
 });
 
 
-// ✅ GET upcoming orders
+// GET upcoming orders
 app.get('/api/orders/upcoming', async (req, res) => {
   try {
     const [rows] = await medstockDB.promise().query(`
@@ -1284,6 +1388,7 @@ app.get('/api/orders/upcoming', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch upcoming orders' });
   }
 });
+
 // --- SETTINGS ENDPOINTS ---
 app.get('/api/settings', (req, res) => {
   medstockDB.query('SELECT * FROM system_settings WHERE id = 1', (err, results) => {
@@ -1358,12 +1463,17 @@ app.get('/api/sales/summary', verifyToken, async (req, res) => {
     else dateFilter = '1=1';
 
     const [summary] = await medstockDB.promise().query(
-      SELECT COUNT(*) as totalSales, SUM(total_amount) as totalRevenue FROM sales WHERE user_email = ? AND ,
+      `SELECT COUNT(*) AS totalSales, SUM(total_amount) AS totalRevenue
+       FROM sales
+       WHERE user_email = ? AND ${dateFilter}`,
       [user.email]
     );
 
     const [paymentBreakdown] = await medstockDB.promise().query(
-      SELECT payment_method, COUNT(*) as count, SUM(total_amount) as amount FROM sales WHERE user_email = ? AND  GROUP BY payment_method,
+      `SELECT payment_method, COUNT(*) AS count, SUM(total_amount) AS amount
+       FROM sales
+       WHERE user_email = ? AND ${dateFilter}
+       GROUP BY payment_method`,
       [user.email]
     );
 
@@ -1390,25 +1500,35 @@ app.get('/api/sales/summary/by-user', verifyToken, async (req, res) => {
     else if (range === 'year') dateFilter = 'YEAR(sale_date) = YEAR(CURDATE())';
     else dateFilter = '1=1';
 
-    let userFilter = '';
-    let queryParams = [];
+    const whereClauses = [dateFilter];
+    const queryParams = [];
     if (userId) {
-      userFilter = 'AND user_email = ?';
+      whereClauses.push('user_email = ?');
       queryParams.push(userId);
     }
 
+    const whereClause = `WHERE ${whereClauses.join(' AND ')}`;
+
     const [summary] = await medstockDB.promise().query(
-      SELECT COUNT(*) as totalSales, SUM(total_amount) as totalRevenue FROM sales WHERE  ,
+      `SELECT COUNT(*) AS totalSales, SUM(total_amount) AS totalRevenue
+       FROM sales
+       ${whereClause}`,
       queryParams
     );
 
     const [paymentBreakdown] = await medstockDB.promise().query(
-      SELECT payment_method, COUNT(*) as count, SUM(total_amount) as amount FROM sales WHERE   GROUP BY payment_method,
+      `SELECT payment_method, COUNT(*) AS count, SUM(total_amount) AS amount
+       FROM sales
+       ${whereClause}
+       GROUP BY payment_method`,
       queryParams
     );
 
     const [userBreakdown] = await medstockDB.promise().query(
-      SELECT user_email, COUNT(*) as totalSales, SUM(total_amount) as totalRevenue FROM sales WHERE   GROUP BY user_email,
+      `SELECT user_email, COUNT(*) AS totalSales, SUM(total_amount) AS totalRevenue
+       FROM sales
+       ${whereClause}
+       GROUP BY user_email`,
       queryParams
     );
 
@@ -1422,3 +1542,191 @@ app.get('/api/sales/summary/by-user', verifyToken, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// ==========================================
+// 🤖 MEDSTOCK AI & AUTOMATION ROUTES
+// ==========================================
+const aiService = require('./ai_service');
+
+// 1. AI Drug-Drug Interaction Safety Checker
+app.post('/api/ai/check-interactions', (req, res) => {
+  const { medicines } = req.body;
+  const result = aiService.checkDrugInteractions(medicines || []);
+  res.json(result);
+});
+
+// 2. AI Generic & Bio-Equivalent Substitute Finder
+app.post('/api/ai/find-substitutes', async (req, res) => {
+  const { medicineName } = req.body;
+  try {
+    const [inventory] = await medstockDB.promise().query('SELECT * FROM inventory');
+    const result = aiService.findGenericSubstitutes(medicineName, inventory);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch substitutes', details: error.message });
+  }
+});
+
+// 3. AI Prescription OCR & Text Parser
+app.post('/api/ai/parse-prescription', async (req, res) => {
+  const { prescriptionText } = req.body;
+  try {
+    const [inventory] = await medstockDB.promise().query('SELECT * FROM inventory');
+    const result = aiService.parsePrescriptionText(prescriptionText, inventory);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to parse prescription', details: error.message });
+  }
+});
+
+// 4. Predictive Stock Reorder & Demand Forecasting
+app.get('/api/ai/forecast-reorder', async (req, res) => {
+  try {
+    const [inventory] = await medstockDB.promise().query('SELECT * FROM inventory');
+    const [sales] = await medstockDB.promise().query('SELECT * FROM sales');
+    const result = aiService.forecastStockReorder(inventory, sales);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to generate reorder forecast', details: error.message });
+  }
+});
+
+// 5. AI Dynamic Expiry Risk & Discount Optimizer
+app.get('/api/ai/expiry-optimizer', async (req, res) => {
+  try {
+    const [inventory] = await medstockDB.promise().query('SELECT * FROM inventory');
+    const result = aiService.optimizeExpiringStock(inventory);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to optimize expiring stock', details: error.message });
+  }
+});
+
+// 6. Natural Language AI Pharmacy Assistant
+app.post('/api/ai/assistant', async (req, res) => {
+  const { prompt } = req.body;
+  try {
+    const [inventory] = await medstockDB.promise().query('SELECT * FROM inventory');
+    const [sales] = await medstockDB.promise().query('SELECT * FROM sales');
+    const result = aiService.pharmacyAIAssistant(prompt, inventory, sales);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to process AI assistant request', details: error.message });
+  }
+});
+
+// 7. AI Prescription Image & OCR Scanner
+app.post('/api/ai/scan-prescription', async (req, res) => {
+  try {
+    const [inventory] = await medstockDB.promise().query('SELECT * FROM inventory');
+    const result = await aiService.scanPrescriptionImage(req.body, inventory);
+    res.json(result);
+  } catch (error) {
+    console.error('Error scanning prescription:', error);
+    res.status(500).json({ error: 'Failed to scan prescription image', details: error.message });
+  }
+});
+
+// 8. Process Confirmed Prescription & Deduct Inventory
+app.post('/api/ai/process-prescription', async (req, res) => {
+  const { confirmedMedicines, customerName, doctorName, paymentMode, userEmail } = req.body;
+
+  if (!confirmedMedicines || !Array.isArray(confirmedMedicines) || confirmedMedicines.length === 0) {
+    return res.status(400).json({ error: 'No confirmed medicines to process' });
+  }
+
+  const connection = await medstockDB.promise().getConnection();
+  try {
+    await connection.beginTransaction();
+
+    let totalAmount = 0;
+    const processedItems = [];
+
+    for (const item of confirmedMedicines) {
+      const qtyToDeduct = parseInt(item.quantity, 10) || 1;
+      const unitPrice = parseFloat(item.unitPrice || item.price) || 0;
+      const lineTotal = unitPrice * qtyToDeduct;
+      totalAmount += lineTotal;
+
+      // Find by id or name
+      let [invRows] = [];
+      if (item.inventoryId) {
+        [invRows] = await connection.query('SELECT * FROM inventory WHERE id = ? FOR UPDATE', [item.inventoryId]);
+      } else {
+        [invRows] = await connection.query('SELECT * FROM inventory WHERE name LIKE ? FOR UPDATE', [`%${item.medicineName}%`]);
+      }
+
+      if (invRows && invRows.length > 0) {
+        const invItem = invRows[0];
+        const newQty = Math.max(0, invItem.quantity - qtyToDeduct);
+        await connection.query('UPDATE inventory SET quantity = ? WHERE id = ?', [newQty, invItem.id]);
+        
+        processedItems.push({
+          id: invItem.id,
+          name: invItem.name,
+          deductedQty: qtyToDeduct,
+          remainingQty: newQty,
+          unitPrice,
+          total: lineTotal
+        });
+      } else {
+        processedItems.push({
+          name: item.medicineName,
+          deductedQty: qtyToDeduct,
+          unitPrice,
+          total: lineTotal,
+          note: 'Dispensed outside catalog tracking'
+        });
+      }
+    }
+
+    // Save into sales table
+    const paymentMethod = paymentMode || 'Cash';
+    const email = userEmail || 'pharmacist@medstock.com';
+    const role = 'Pharmacist';
+    
+    await connection.query(
+      'INSERT INTO sales (user_email, role, payment_method, total_amount, source, sale_date) VALUES (?, ?, ?, ?, ?, NOW())',
+      [email, role, paymentMethod, totalAmount, 'AI Prescription Dispensing']
+    );
+
+    // Save into userrole_billingpage
+    const billItemsJson = JSON.stringify(processedItems.map(p => ({
+      name: p.name,
+      quantity: p.deductedQty,
+      price: p.unitPrice
+    })));
+
+    const [billResult] = await connection.query(
+      'INSERT INTO userrole_billingpage (name, quantity, price) VALUES (?, ?, ?)',
+      [`Rx Dispensed - ${customerName || 'Patient'}`, processedItems.length, billItemsJson]
+    );
+
+    // Fetch business details for invoice
+    const [settingsRows] = await connection.query('SELECT * FROM system_settings LIMIT 1');
+    const businessDetails = settingsRows && settingsRows.length > 0 ? settingsRows[0] : {};
+
+    await connection.commit();
+
+    res.json({
+      success: true,
+      message: 'Prescription processed and inventory deducted successfully!',
+      transactionId: `RX-DISP-${billResult.insertId || Date.now().toString().slice(-6)}`,
+      customerName: customerName || 'Walk-in Patient',
+      doctorName: doctorName || 'Prescribing Physician',
+      dispensedDate: new Date().toISOString(),
+      processedItems,
+      totalAmount: parseFloat(totalAmount.toFixed(2)),
+      paymentMethod,
+      businessDetails
+    });
+  } catch (err) {
+    await connection.rollback();
+    console.error('Error processing prescription transaction:', err);
+    res.status(500).json({ error: 'Failed to process prescription and update inventory', details: err.message });
+  } finally {
+    connection.release();
+  }
+});
+
+module.exports = app;

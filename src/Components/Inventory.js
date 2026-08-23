@@ -1,18 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api/axiosConfig';
 import { AiOutlineClose } from "react-icons/ai";
+import { FaRobot, FaBoxes, FaTags, FaExchangeAlt, FaPlus, FaEdit, FaTrash } from 'react-icons/fa';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import toast from 'react-hot-toast';
+import AIGenericFinderModal from './AIGenericFinderModal';
 
 export default function Inventory() {
   const [inventory, setInventory] = useState([]);
-  const [filteredInventory, setFilteredInventory] = useState(inventory);
+  const [filteredInventory, setFilteredInventory] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showRemoveModal, setShowRemoveModal] = useState(false);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [systemDefaultThreshold, setSystemDefaultThreshold] = useState(10);
+  
+  // AI Forecast state
+  const [aiReorderData, setAiReorderData] = useState(null);
+  const [aiExpiryData, setAiExpiryData] = useState(null);
+  const [showAiPanel, setShowAiPanel] = useState(true);
+  const [isGenericFinderOpen, setIsGenericFinderOpen] = useState(false);
 
   const [newItem, setNewItem] = useState({
     name: '',
@@ -24,8 +32,10 @@ export default function Inventory() {
     threshold: '',
   });
 
-  useEffect(() => {
-    api.get('/Inventory')
+  const [selectedItem, setSelectedItem] = useState(null);
+
+  const fetchInventoryData = () => {
+    api.get('/inventory')
       .then(response => {
         setInventory(response.data);
         setFilteredInventory(response.data);
@@ -33,6 +43,21 @@ export default function Inventory() {
       .catch(error => {
         console.error('Error fetching inventory:', error);
       });
+  };
+
+  const fetchAiInsights = () => {
+    api.get('/ai/forecast-reorder')
+      .then(res => setAiReorderData(res.data))
+      .catch(err => console.error("Error fetching AI forecast:", err));
+
+    api.get('/ai/expiry-optimizer')
+      .then(res => setAiExpiryData(res.data))
+      .catch(err => console.error("Error fetching AI expiry optimizer:", err));
+  };
+
+  useEffect(() => {
+    fetchInventoryData();
+    fetchAiInsights();
 
     api.get('/settings')
       .then(response => {
@@ -43,23 +68,26 @@ export default function Inventory() {
       .catch(err => console.error('Error fetching settings:', err));
   }, []);
 
-  const [selectedItem, setSelectedItem] = useState(null);
-
   const handleAddItem = () => {
-    setNewItem(prev => ({ ...prev, threshold: systemDefaultThreshold.toString() }));
+    setNewItem({
+      name: '',
+      category: '',
+      quantity: '',
+      price: '',
+      expiryDate: '',
+      supplier: '',
+      threshold: systemDefaultThreshold.toString()
+    });
     setShowAddModal(true);
   };
-  const closeAddModal = () => {
-    setShowAddModal(false);
-    setNewItem({ name: '', category: '', quantity: '', price: '', expiryDate: '', supplier: '', threshold: '' });
-  };
+  const closeAddModal = () => setShowAddModal(false);
 
   const handleRemoveItem = () => setShowRemoveModal(true);
   const closeRemoveModal = () => setShowRemoveModal(false);
 
   const handleUpdateItem = () => {
     if (!selectedItem) {
-      toast.error("Please select an item to update!");
+      toast.error("Please select an item in the table to update!");
       return;
     }
     const itemToUpdate = inventory.find(item => item.id === selectedItem);
@@ -71,121 +99,67 @@ export default function Inventory() {
     setShowUpdateModal(true);
   };
 
-  const closeUpdateModal = () => {
-    setShowUpdateModal(false);
-    setNewItem({ name: '', category: '', quantity: '', price: '', expiryDate: '', supplier: '', threshold: '' });
-  };
+  const closeUpdateModal = () => setShowUpdateModal(false);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    const alphaNumericRegex = /^[A-Za-z0-9- ]+$/;
-    const onlyLettersRegex = /^[A-Za-z ]+$/;
-    const allNumbersRegex = /^\d+$/;
+    setNewItem(prev => ({ ...prev, [name]: value }));
+  };
 
-    if (name === "expiryDate") {
-      const selectedDate = new Date(value);
-      const minExpiryDate = new Date();
-      minExpiryDate.setFullYear(minExpiryDate.getFullYear() + 1);
-      if (selectedDate < minExpiryDate) {
-        toast.error("Expiry date must be at least 1 year from today.");
-        return;
-      }
+  const handleSearch = (e) => {
+    const query = e.target.value.toLowerCase();
+    setSearchQuery(query);
+    applyFilter(query, selectedCategory);
+  };
+
+  const handleCategoryChange = (e) => {
+    const category = e.target.value;
+    setSelectedCategory(category);
+    applyFilter(searchQuery, category);
+  };
+
+  const applyFilter = (query, category) => {
+    let filtered = inventory;
+    if (category) {
+      filtered = filtered.filter(item => item.category === category);
     }
-
-    if (name === "supplier" && !onlyLettersRegex.test(value)) {
-      toast.error("Supplier name should contain only alphabets and spaces.");
-      return;
+    if (query) {
+      filtered = filtered.filter(item =>
+        item.name.toLowerCase().includes(query) ||
+        item.supplier.toLowerCase().includes(query) ||
+        item.category.toLowerCase().includes(query)
+      );
     }
-
-    if (name === "category" && !onlyLettersRegex.test(value)) {
-      toast.error("Category must contain only alphabets and spaces.");
-      return;
-    }
-
-    if (name === "name" && (!alphaNumericRegex.test(value) || allNumbersRegex.test(value))) {
-      toast.error("Name should contain letters and not be all numbers.");
-      return;
-    }
-
-    if (name === "threshold") {
-      const thresholdValue = parseInt(value, 10);
-      if (isNaN(thresholdValue) || thresholdValue < 0) {
-        toast.error("Threshold must be above 0.");
-        return;
-      }
-    }
-
-    if (name === "quantity" || name === "price") {
-      if (value !== "" && !/^\d*\.?\d*$/.test(value)) {
-        return;
-      }
-    }
-
-    setNewItem((prevItem) => ({ ...prevItem, [name]: value }));
+    setFilteredInventory(filtered);
   };
 
   const handleSaveItem = (e) => {
     e.preventDefault();
-    const newItemWithId = {
-      name: newItem.name,
-      category: newItem.category,
-      quantity: parseInt(newItem.quantity, 10),
-      price: parseFloat(newItem.price),
-      expiryDate: newItem.expiryDate,
-      supplier: newItem.supplier,
-      threshold: parseInt(newItem.threshold, 10),
-    };
-
-    api.post('/inventory', newItemWithId) 
+    api.post('/inventory', newItem)
       .then(() => {
-        api.get('/inventory')
-          .then(response => {
-            setInventory(response.data);
-            setFilteredInventory(response.data);
-          });
+        fetchInventoryData();
+        fetchAiInsights();
         closeAddModal();
-        toast.success("Item added successfully");
+        toast.success("Medicine added successfully!");
       })
       .catch(error => {
         console.error('Error adding item:', error);
-        toast.error("Failed to add item");
+        toast.error("Failed to add medicine");
       });
   };
 
-  useEffect(() => {
-    let filtered = inventory;
-    
-    if (selectedCategory) {
-      filtered = filtered.filter(item => item.category === selectedCategory);
-    }
-    
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(item =>
-        Object.values(item)
-          .map(value => String(value).toLowerCase())
-          .join(' ')
-          .includes(query)
-      );
-    }
-    
-    setFilteredInventory(filtered);
-  }, [inventory, searchQuery, selectedCategory]);
-
-  const handleSearch = (e) => {
-    setSearchQuery(e.target.value);
-  };
-
   const handleRemoveSelectedItem = () => {
+    if (!selectedItem) {
+      toast.error("Please select an item to remove");
+      return;
+    }
     api.delete(`/inventory/${selectedItem}`)
       .then(() => {
-        api.get('/inventory')
-          .then(response => {
-            setInventory(response.data);
-            setFilteredInventory(response.data);
-          });
+        fetchInventoryData();
+        fetchAiInsights();
         closeRemoveModal();
-        toast.success("Item removed successfully");
+        setSelectedItem(null);
+        toast.success("Medicine removed successfully");
       })
       .catch(error => {
         console.error('Error removing item:', error);
@@ -195,15 +169,12 @@ export default function Inventory() {
 
   const handleUpdateItemDetails = (e) => {
     e.preventDefault();
-    api.put(`/inventory/${selectedItem}`, newItem)
+    api.put(`/inventory/${newItem.id}`, newItem)
       .then(() => {
-        api.get('/inventory')
-          .then(response => {
-            setInventory(response.data);
-            setFilteredInventory(response.data);
-          });
+        fetchInventoryData();
+        fetchAiInsights();
         closeUpdateModal();
-        toast.success("Item updated successfully");
+        toast.success("Medicine updated successfully");
       })
       .catch(error => {
         console.error('Error updating item:', error);
@@ -211,176 +182,299 @@ export default function Inventory() {
       });
   };
 
-  const data = [
-    { name: "Category A", value: 40 },
-    { name: "Category B", value: 30 },
-    { name: "Category C", value: 20 },
-    { name: "Low Stock", value: 10 },
-  ];
+  // Dynamic Chart calculations
+  const categoriesMap = {};
+  let lowStockCount = 0;
+  let expiredCount = 0;
+  const now = new Date();
 
-  const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444"]; // Brand mapped colors for pie charts
+  inventory.forEach(item => {
+    categoriesMap[item.category] = (categoriesMap[item.category] || 0) + item.quantity;
+    if (item.quantity <= item.threshold) lowStockCount++;
+    if (item.expiryDate && new Date(item.expiryDate) < now) expiredCount++;
+  });
+
+  const categoryData = Object.keys(categoriesMap).slice(0, 5).map(cat => ({
+    name: cat,
+    value: categoriesMap[cat]
+  }));
+
+  const COLORS = ["#2563eb", "#0d9488", "#10b981", "#f59e0b", "#8b5cf6", "#ef4444"];
 
   return (
-    <div className="bg-slate-50 dark:bg-slate-900 min-h-screen pb-10 px-5 md:px-8 font-sans mx-auto w-full">
+    <div className="bg-slate-50 dark:bg-slate-900 min-h-screen pb-12 px-5 md:px-8 font-sans mx-auto w-full">
       
       {/* Page Header */}
-      <div className="mb-8 mt-6 py-6 bg-gradient-to-r from-primary-800 to-primary-600 text-white rounded-2xl shadow-md text-center">
-        <h1 className="text-3xl font-bold tracking-wide drop-shadow-sm">Inventory Overview</h1>
+      <div className="mb-6 mt-6 py-6 px-8 bg-gradient-to-r from-primary-800 via-primary-700 to-teal-700 text-white rounded-2xl shadow-md flex flex-col md:flex-row items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight">Pharmaceutical Inventory</h1>
+            <span className="px-2.5 py-0.5 rounded-full bg-emerald-400 text-slate-900 text-xs font-bold uppercase tracking-wider">Smart Stock</span>
+          </div>
+          <p className="text-xs md:text-sm text-primary-100">
+            Real-time stock ledger, predictive reorder automation, and dynamic clearance optimization.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsGenericFinderOpen(true)}
+            className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white text-xs font-bold rounded-xl backdrop-blur-sm border border-white/30 transition-all flex items-center gap-1.5 shadow-sm"
+          >
+            <FaExchangeAlt /> Generic Finder
+          </button>
+          <button
+            onClick={() => setShowAiPanel(!showAiPanel)}
+            className="px-4 py-2 bg-white text-slate-900 text-xs font-bold rounded-xl shadow-md hover:bg-slate-100 transition-all flex items-center gap-1.5"
+          >
+            <FaRobot className="text-primary-600" /> {showAiPanel ? 'Hide AI Hub' : 'Show AI Hub'}
+          </button>
+        </div>
       </div>
 
-      {/* Stats Charts Grid */}
+      {/* AI Automation & Forecasting Banner */}
+      {showAiPanel && (
+        <div className="max-w-7xl mx-auto mb-8 grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fadeIn">
+          
+          {/* AI Reorder Forecast Card */}
+          <div className="bg-gradient-to-br from-amber-500/10 to-primary-500/10 dark:from-amber-950/30 dark:to-primary-950/30 border border-amber-300 dark:border-amber-700 rounded-2xl p-6 shadow-sm space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center text-lg">
+                  <FaBoxes />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-800 dark:text-white text-sm">AI Predictive Reorder Engine</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Demand velocity & stockout prevention</p>
+                </div>
+              </div>
+              <span className="text-xs font-bold px-2.5 py-1 bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200 rounded-lg">
+                {aiReorderData?.urgentReorderCount || 0} Critical Reorders
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              {aiReorderData?.recommendations?.slice(0, 3).map((rec, idx) => (
+                <div key={idx} className="bg-white/80 dark:bg-slate-800/80 p-3 rounded-xl border border-amber-200 dark:border-amber-800/60 flex items-center justify-between text-xs">
+                  <div>
+                    <h5 className="font-bold text-slate-800 dark:text-white">{rec.name}</h5>
+                    <p className="text-slate-500 dark:text-slate-400">
+                      Current: <strong>{rec.currentStock}</strong> &bull; Threshold: {rec.threshold} &bull; Days Left: <strong className="text-amber-600">{rec.daysRemaining} days</strong>
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <span className="font-extrabold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 px-2 py-1 rounded">
+                      Order +{rec.suggestedReorderQty}
+                    </span>
+                    <p className="text-[10px] text-slate-400 mt-0.5">Est: ₹{rec.estimatedCost}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* AI Expiry Markdown Optimizer Card */}
+          <div className="bg-gradient-to-br from-rose-500/10 to-teal-500/10 dark:from-rose-950/30 dark:to-teal-950/30 border border-rose-300 dark:border-rose-700 rounded-2xl p-6 shadow-sm space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-rose-500 text-white flex items-center justify-center text-lg">
+                  <FaTags />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-800 dark:text-white text-sm">AI Dynamic Expiry Risk & Markdown Optimizer</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Automatic markdown suggestions to avoid write-offs</p>
+                </div>
+              </div>
+              <span className="text-xs font-bold px-2.5 py-1 bg-rose-100 dark:bg-rose-900 text-rose-800 dark:text-rose-200 rounded-lg">
+                ₹{aiExpiryData?.totalValueAtRisk || 0} Value at Risk
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              {aiExpiryData?.riskTiers?.critical30Days?.concat(aiExpiryData?.riskTiers?.warning60Days || [])?.slice(0, 3).map((exp, idx) => (
+                <div key={idx} className="bg-white/80 dark:bg-slate-800/80 p-3 rounded-xl border border-rose-200 dark:border-rose-800/60 flex items-center justify-between text-xs">
+                  <div>
+                    <h5 className="font-bold text-slate-800 dark:text-white">{exp.name}</h5>
+                    <p className="text-slate-500 dark:text-slate-400">
+                      Qty: {exp.quantity} &bull; Exp: <strong>{new Date(exp.expiryDate).toLocaleDateString()}</strong> ({exp.daysToExpiry} days left)
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <span className="font-extrabold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/50 px-2 py-1 rounded">
+                      Apply {exp.discountPercent}% Off
+                    </span>
+                    <p className="text-[10px] text-slate-400 mt-0.5">Clearance Bundle</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* Dynamic Visual Analytics Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 max-w-7xl mx-auto">
-        {/* Chart 1 */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-card border border-slate-100 dark:border-slate-700 p-6 flex flex-col justify-between">
-          <h2 className="text-lg font-semibold mb-4 text-center text-slate-800 dark:text-slate-100">Stock by Category</h2>
-          <ResponsiveContainer width="100%" height={220}>
+        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-card border border-slate-200/80 dark:border-slate-700/80 p-6 flex flex-col justify-between">
+          <h2 className="text-sm font-bold text-slate-700 dark:text-slate-200 text-center mb-2 uppercase tracking-wider">Category Distribution</h2>
+          <ResponsiveContainer width="100%" height={200}>
             <PieChart>
-              <Pie data={data} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={5} dataKey="value" label>
-                {data.map((entry, index) => (
+              <Pie data={categoryData.length > 0 ? categoryData : [{ name: "Medicines", value: 100 }]} cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={4} dataKey="value">
+                {categoryData.map((_, index) => (
                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                 ))}
               </Pie>
-              <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }} />
+              <Tooltip />
             </PieChart>
           </ResponsiveContainer>
         </div>
 
-        {/* Chart 2 */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-card border border-slate-100 dark:border-slate-700 p-6 flex flex-col justify-between">
-          <h2 className="text-lg font-semibold mb-4 text-center text-slate-800 dark:text-slate-100">Low Stock Items</h2>
-          <ResponsiveContainer width="100%" height={220}>
+        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-card border border-slate-200/80 dark:border-slate-700/80 p-6 flex flex-col justify-between">
+          <h2 className="text-sm font-bold text-slate-700 dark:text-slate-200 text-center mb-2 uppercase tracking-wider">Low Stock Status</h2>
+          <ResponsiveContainer width="100%" height={200}>
             <PieChart>
-              <Pie data={[{ name: "Low Stock", value: 10 }, { name: "Sufficient", value: 90 }]} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={5} dataKey="value" label>
+              <Pie data={[
+                { name: "Low Stock", value: lowStockCount || 1 },
+                { name: "Healthy Stock", value: Math.max(inventory.length - lowStockCount, 1) }
+              ]} cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={4} dataKey="value">
                 <Cell fill="#f59e0b" />
                 <Cell fill="#10b981" />
               </Pie>
-              <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }} />
+              <Tooltip />
             </PieChart>
           </ResponsiveContainer>
         </div>
 
-        {/* Chart 3 */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-card border border-slate-100 dark:border-slate-700 p-6 flex flex-col justify-between">
-          <h2 className="text-lg font-semibold mb-4 text-center text-slate-800 dark:text-slate-100">Expired Items</h2>
-          <ResponsiveContainer width="100%" height={220}>
+        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-card border border-slate-200/80 dark:border-slate-700/80 p-6 flex flex-col justify-between">
+          <h2 className="text-sm font-bold text-slate-700 dark:text-slate-200 text-center mb-2 uppercase tracking-wider">Expiry Timeline Health</h2>
+          <ResponsiveContainer width="100%" height={200}>
             <PieChart>
-              <Pie data={[{ name: "Expired", value: 5 }, { name: "Valid", value: 95 }]} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={5} dataKey="value" label>
+              <Pie data={[
+                { name: "Near Expiry / Expired", value: expiredCount || (aiExpiryData?.totalExpiringBatches || 1) },
+                { name: "Valid Batches", value: Math.max(inventory.length - (expiredCount || 1), 1) }
+              ]} cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={4} dataKey="value">
                 <Cell fill="#ef4444" />
-                <Cell fill="#10b981" />
+                <Cell fill="#0ea5e9" />
               </Pie>
-              <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }} />
+              <Tooltip />
             </PieChart>
           </ResponsiveContainer>
         </div>
       </div>
 
-      {/* Toolbar (Controls & Search) */}
+      {/* Toolbar & Filters */}
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
-        <div className="flex flex-wrap gap-4">
-          <button className="bg-primary-600 hover:bg-primary-700 text-white px-6 py-2.5 rounded-lg font-semibold transition-all shadow-sm hover:shadow-md hover:-translate-y-0.5" onClick={handleAddItem}>
-            Add New Item
+        <div className="flex flex-wrap gap-2.5">
+          <button 
+            onClick={handleAddItem}
+            className="bg-primary-600 hover:bg-primary-700 text-white px-5 py-2.5 rounded-xl font-bold text-xs transition-all shadow-sm flex items-center gap-1.5"
+          >
+            <FaPlus /> Add Medicine
           </button>
-          <button className="bg-white dark:bg-slate-800 border-2 border-warning text-warning hover:bg-warning-bg px-6 py-2.5 rounded-lg font-semibold transition-colors shadow-sm" onClick={handleUpdateItem}>
-            Update Item
+          <button 
+            onClick={handleUpdateItem}
+            className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5"
+          >
+            <FaEdit /> Edit Selected
           </button>
-          <button className="bg-white dark:bg-slate-800 border-2 border-danger text-danger hover:bg-danger-bg px-6 py-2.5 rounded-lg font-semibold transition-colors shadow-sm" onClick={handleRemoveItem}>
-            Remove Item
+          <button 
+            onClick={handleRemoveItem}
+            className="bg-white dark:bg-slate-800 border border-rose-300 dark:border-rose-700 text-rose-600 dark:text-rose-400 hover:bg-rose-50 px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5"
+          >
+            <FaTrash /> Remove Medicine
           </button>
         </div>
         
-        <div className="w-full md:w-auto flex-1 max-w-xl ml-auto mt-4 md:mt-0 flex gap-4">
+        <div className="w-full md:w-auto flex-1 max-w-xl ml-auto flex gap-3">
           <select 
             value={selectedCategory} 
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            className="w-1/3 px-4 py-3 bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-slate-800 dark:text-slate-100 transition-all shadow-sm hover:border-slate-400 cursor-pointer"
+            onChange={handleCategoryChange}
+            className="w-1/3 px-3 py-2.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 font-semibold"
           >
             <option value="">All Categories</option>
             {[...new Set(inventory.map(item => item.category))].map(cat => (
               <option key={cat} value={cat}>{cat}</option>
             ))}
           </select>
-          <div className="relative w-2/3">
-            <input 
-              id="searchBox" 
-              value={searchQuery}
-              onChange={handleSearch} 
-              placeholder="Search inventory items..." 
-              className="w-full pl-10 pr-4 py-3 bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-slate-800 dark:text-slate-100 placeholder-slate-500 transition-all shadow-sm hover:border-slate-400" 
-            />
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-          </div>
+          <input 
+            value={searchQuery}
+            onChange={handleSearch} 
+            placeholder="Search medicine name, supplier, category..." 
+            className="w-2/3 px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500" 
+          />
         </div>
       </div>
 
-      {/* Legend */}
-      <div className="max-w-7xl mx-auto flex gap-6 items-center mb-4 px-2">
-        <p className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-          <span className="w-3 h-3 inline-block bg-danger rounded-full shadow-sm"></span>
-          Expired Items
-        </p>
-        <p className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-          <span className="w-3 h-3 inline-block bg-warning rounded-full shadow-sm"></span>
-          Low Stock Items
-        </p>
-      </div>
-
       {/* Main Table */}
-      <div className="max-w-7xl mx-auto overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-card bg-white dark:bg-slate-800 mb-10">
+      <div className="max-w-7xl mx-auto overflow-x-auto rounded-2xl border border-slate-200/80 dark:border-slate-700/80 shadow-card bg-white dark:bg-slate-800 mb-10">
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-slate-50 dark:bg-slate-900 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider font-semibold border-b border-slate-200 dark:border-slate-700">
-              <th className="px-6 py-4">No.</th>
-              <th className="px-6 py-4">Item Name</th>
-              <th className="px-6 py-4">Category</th>
-              <th className="px-6 py-4">Quantity</th>
-              <th className="px-6 py-4">Total Price</th>
-              <th className="px-6 py-4">Expiry Date</th>
-              <th className="px-6 py-4">Supplier</th>
-              <th className="px-6 py-4">Threshold</th>
+              <th className="px-5 py-3.5">Medicine Name</th>
+              <th className="px-4 py-3.5">Category</th>
+              <th className="px-4 py-3.5 text-center">Stock</th>
+              <th className="px-4 py-3.5 text-right">Unit Price</th>
+              <th className="px-4 py-3.5 text-right">Total Val</th>
+              <th className="px-4 py-3.5">Expiry Date</th>
+              <th className="px-4 py-3.5">Supplier</th>
+              <th className="px-3 py-3.5 text-center">Status</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
-            {filteredInventory.map((item, index) => {
-              const isExpired = item.expiryDate ? new Date(item.expiryDate) < new Date() : false;
-              const isLowStock = item.quantity < item.threshold;
-              
-              let rowBg = "hover:bg-slate-50 dark:hover:bg-slate-700/50 dark:bg-slate-900";
-              let rowText = "text-slate-700 dark:text-slate-200";
-              
-              if (item.id === selectedItem) {
-                rowBg = "bg-primary-50 hover:bg-primary-100 border-l-4 border-l-primary-500";
-              } else if (isExpired) {
-                rowBg = "bg-danger-bg hover:bg-red-200";
-                rowText = "text-danger-text";
-              } else if (isLowStock) {
-                rowBg = "bg-warning-bg hover:bg-amber-200";
-                rowText = "text-warning-text";
-              }
+          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+            {filteredInventory.map((item) => {
+              const isExpired = item.expiryDate ? new Date(item.expiryDate) < now : false;
+              const isLowStock = item.quantity <= item.threshold;
+              const isSelected = item.id === selectedItem;
 
               return (
                 <tr
                   key={item.id}
                   onClick={() => setSelectedItem(item.id)}
-                  className={`cursor-pointer transition-colors ${rowBg}`}
+                  className={`cursor-pointer transition-colors ${
+                    isSelected 
+                      ? 'bg-primary-50 dark:bg-primary-950/40 border-l-4 border-l-primary-600' 
+                      : 'hover:bg-slate-50/80 dark:hover:bg-slate-850'
+                  }`}
                 >
-                  <td className={`px-6 py-4 text-sm font-medium ${rowText}`}>{index + 1}</td>
-                  <td className={`px-6 py-4 text-sm font-semibold ${rowText}`}>{item.name}</td>
-                  <td className={`px-6 py-4 text-sm ${rowText}`}>{item.category}</td>
-                  <td className={`px-6 py-4 text-sm font-medium ${rowText}`}>{item.quantity}</td>
-                  <td className={`px-6 py-4 text-sm font-semibold ${rowText}`}>₹{(item.price * item.quantity).toFixed(2)}</td>
-                  <td className={`px-6 py-4 text-sm ${rowText}`}>{item.expiryDate ? new Date(item.expiryDate).toISOString().split('T')[0] : 'N/A'}</td>
-                  <td className={`px-6 py-4 text-sm ${rowText}`}>{item.supplier}</td>
-                  <td className={`px-6 py-4 text-sm ${rowText}`}>{item.threshold}</td>
+                  <td className="px-5 py-3.5 text-xs font-bold text-slate-900 dark:text-white">
+                    {item.name}
+                  </td>
+                  <td className="px-4 py-3.5 text-xs text-slate-600 dark:text-slate-300">
+                    {item.category}
+                  </td>
+                  <td className="px-4 py-3.5 text-xs text-center font-extrabold text-slate-900 dark:text-white">
+                    {item.quantity}
+                  </td>
+                  <td className="px-4 py-3.5 text-xs text-right font-semibold text-slate-700 dark:text-slate-300">
+                    ₹{parseFloat(item.price).toFixed(2)}
+                  </td>
+                  <td className="px-4 py-3.5 text-xs text-right font-extrabold text-slate-900 dark:text-white">
+                    ₹{(parseFloat(item.price) * item.quantity).toFixed(2)}
+                  </td>
+                  <td className="px-4 py-3.5 text-xs text-slate-600 dark:text-slate-300">
+                    {item.expiryDate ? new Date(item.expiryDate).toISOString().split('T')[0] : 'N/A'}
+                  </td>
+                  <td className="px-4 py-3.5 text-xs text-slate-600 dark:text-slate-300">
+                    {item.supplier}
+                  </td>
+                  <td className="px-3 py-3.5 text-center">
+                    {isExpired ? (
+                      <span className="px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 text-[10px] font-bold">
+                        Expired
+                      </span>
+                    ) : isLowStock ? (
+                      <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 text-[10px] font-bold">
+                        Low Stock
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold">
+                        Healthy
+                      </span>
+                    )}
+                  </td>
                 </tr>
               );
             })}
-            {filteredInventory.length === 0 && (
-              <tr>
-                <td colSpan="8" className="px-6 py-12 text-center text-slate-500 dark:text-slate-400 font-medium bg-slate-50 dark:bg-slate-900">
-                  No inventory items found.
-                </td>
-              </tr>
-            )}
           </tbody>
         </table>
       </div>
@@ -388,36 +482,24 @@ export default function Inventory() {
       {/* Add Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-modal max-w-md w-full p-8 relative">
-            <button onClick={closeAddModal} className="absolute top-6 right-6 w-10 h-10 bg-slate-100 text-slate-500 dark:text-slate-400 rounded-full flex items-center justify-center hover:bg-danger-bg hover:text-danger hover:rotate-90 transition-all">
-              <AiOutlineClose size={20} />
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-modal max-w-md w-full p-6 relative">
+            <button onClick={closeAddModal} className="absolute top-5 right-5 text-slate-400 hover:text-slate-600">
+              <AiOutlineClose size={18} />
             </button>
-            <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100 border-b border-slate-200 dark:border-slate-700 pb-4 mb-6">Add Item</h3>
-            <form onSubmit={handleSaveItem} className="flex flex-col gap-4">
-              <input type="text" name="name" placeholder="Item Name" value={newItem.name} onChange={handleInputChange} required className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm text-slate-700 dark:text-slate-200" />
-              <select name="category" value={newItem.category} onChange={handleInputChange} required className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm text-slate-700 dark:text-slate-200">
-                <option value="">Select Category</option>
-                <option value="tablet">Tablet</option>
-                <option value="syrup">Syrup</option>
-                <option value="lotion">Lotion</option>
-                <option value="oil">Oil</option>
-                <option value="spray">Spray</option>
-                <option value="injection">Injection</option>
-                <option value="ointment">Ointment</option>
-                <option value="cream">Cream/gel</option>
-                <option value="drops">Drops</option>
-                <option value="other">Other</option>
-              </select>
-              <div className="flex gap-4">
-                <input type="number" name="quantity" placeholder="Quantity" value={newItem.quantity} onChange={handleInputChange} required className="flex-1 px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm text-slate-700 dark:text-slate-200" />
-                <input type="number" name="price" placeholder="Price" value={newItem.price} onChange={handleInputChange} required className="flex-1 px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm text-slate-700 dark:text-slate-200" />
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white border-b border-slate-100 dark:border-slate-700 pb-3 mb-4">Add Medicine Item</h3>
+            <form onSubmit={handleSaveItem} className="flex flex-col gap-3">
+              <input type="text" name="name" placeholder="Item Name (e.g. Amoxicillin 500mg)" value={newItem.name} onChange={handleInputChange} required className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
+              <input type="text" name="category" placeholder="Category (e.g. Antibiotic, Analgesic)" value={newItem.category} onChange={handleInputChange} required className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
+              <div className="flex gap-3">
+                <input type="number" name="quantity" placeholder="Quantity" value={newItem.quantity} onChange={handleInputChange} required className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
+                <input type="number" step="0.01" name="price" placeholder="Price (₹)" value={newItem.price} onChange={handleInputChange} required className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
               </div>
-              <div className="flex gap-4">
-                <input type="date" name="expiryDate" value={newItem.expiryDate} onChange={handleInputChange} required className="flex-1 px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm text-slate-700 dark:text-slate-200" />
-                <input type="number" name="threshold" placeholder="Threshold" value={newItem.threshold} onChange={handleInputChange} required className="flex-1 px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm text-slate-700 dark:text-slate-200" />
+              <div className="flex gap-3">
+                <input type="date" name="expiryDate" value={newItem.expiryDate} onChange={handleInputChange} required className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
+                <input type="number" name="threshold" placeholder="Threshold (e.g. 20)" value={newItem.threshold} onChange={handleInputChange} required className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
               </div>
-              <input type="text" name="supplier" placeholder="Supplier" value={newItem.supplier} onChange={handleInputChange} required className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm text-slate-700 dark:text-slate-200" />
-              <button type="submit" className="w-full bg-primary-600 hover:bg-primary-700 text-white py-3 mt-2 rounded-xl font-bold shadow-sm hover:shadow-md transition-all">Save Item</button>
+              <input type="text" name="supplier" placeholder="Supplier Name" value={newItem.supplier} onChange={handleInputChange} required className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
+              <button type="submit" className="w-full bg-primary-600 hover:bg-primary-700 text-white py-2.5 mt-2 rounded-xl font-bold text-xs shadow-sm">Save Medicine</button>
             </form>
           </div>
         </div>
@@ -426,19 +508,19 @@ export default function Inventory() {
       {/* Remove Modal */}
       {showRemoveModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-modal max-w-md w-full p-8 relative">
-            <button onClick={closeRemoveModal} className="absolute top-6 right-6 w-10 h-10 bg-slate-100 text-slate-500 dark:text-slate-400 rounded-full flex items-center justify-center hover:bg-danger-bg hover:text-danger hover:rotate-90 transition-all">
-               <AiOutlineClose size={20} />
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-modal max-w-md w-full p-6 relative">
+            <button onClick={closeRemoveModal} className="absolute top-5 right-5 text-slate-400 hover:text-slate-600">
+              <AiOutlineClose size={18} />
             </button>
-            <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100 border-b border-slate-200 dark:border-slate-700 pb-4 mb-6">Remove Item</h2>
-            <select onChange={(e) => setSelectedItem(Number(e.target.value))} value={selectedItem || ""} className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm text-slate-700 dark:text-slate-200 mb-6">
-              <option value="">Select Item to Remove</option>
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white border-b border-slate-100 dark:border-slate-700 pb-3 mb-4">Remove Medicine</h3>
+            <select onChange={(e) => setSelectedItem(Number(e.target.value))} value={selectedItem || ""} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs mb-4">
+              <option value="">Select Item to Delete</option>
               {inventory.map((item) => (
                 <option key={item.id} value={item.id}>{item.name}</option>
               ))}
             </select>
-            <button className="w-full bg-danger hover:bg-danger-hover text-white py-3 rounded-xl font-bold shadow-sm hover:shadow-md transition-all" onClick={handleRemoveSelectedItem}>
-              Confirm Removal
+            <button onClick={handleRemoveSelectedItem} className="w-full bg-rose-600 hover:bg-rose-700 text-white py-2.5 rounded-xl font-bold text-xs shadow-sm">
+              Confirm Delete
             </button>
           </div>
         </div>
@@ -447,63 +529,40 @@ export default function Inventory() {
       {/* Update Modal */}
       {showUpdateModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-modal max-w-md w-full p-8 relative">
-            <button onClick={closeUpdateModal} className="absolute top-6 right-6 w-10 h-10 bg-slate-100 text-slate-500 dark:text-slate-400 rounded-full flex items-center justify-center hover:bg-danger-bg hover:text-danger hover:rotate-90 transition-all">
-              <AiOutlineClose size={20} />
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-modal max-w-md w-full p-6 relative">
+            <button onClick={closeUpdateModal} className="absolute top-5 right-5 text-slate-400 hover:text-slate-600">
+              <AiOutlineClose size={18} />
             </button>
-            <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100 border-b border-slate-200 dark:border-slate-700 pb-4 mb-6">Update Item</h2>
-            <form onSubmit={handleUpdateItemDetails} className="flex flex-col gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Item Name</label>
-                <input type="text" name="name" value={newItem.name} onChange={handleInputChange} required className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm text-slate-700 dark:text-slate-200" />
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white border-b border-slate-100 dark:border-slate-700 pb-3 mb-4">Edit Medicine</h3>
+            <form onSubmit={handleUpdateItemDetails} className="flex flex-col gap-3">
+              <input type="text" name="name" value={newItem.name} onChange={handleInputChange} required className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
+              <input type="text" name="category" value={newItem.category} onChange={handleInputChange} required className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
+              <div className="flex gap-3">
+                <input type="number" name="quantity" value={newItem.quantity} onChange={handleInputChange} required className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
+                <input type="number" step="0.01" name="price" value={newItem.price} onChange={handleInputChange} required className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Category</label>
-                <select name="category" value={newItem.category} onChange={handleInputChange} required className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm text-slate-700 dark:text-slate-200">
-                  <option value="">Select Category</option>
-                  <option value="tablet">Tablet</option>
-                  <option value="syrup">Syrup</option>
-                  <option value="lotion">Lotion</option>
-                  <option value="oil">Oil</option>
-                  <option value="spray">Spray</option>
-                  <option value="injection">Injection</option>
-                  <option value="ointment">Ointment</option>
-                  <option value="cream">Cream/gel</option>
-                  <option value="drops">Drops</option>
-                  <option value="other">Other</option>
-                </select>
+              <div className="flex gap-3">
+                <input type="date" name="expiryDate" value={newItem.expiryDate ? new Date(newItem.expiryDate).toISOString().split('T')[0] : ''} onChange={handleInputChange} required className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
+                <input type="number" name="threshold" value={newItem.threshold} onChange={handleInputChange} required className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
               </div>
-              <div className="flex gap-4">
-                <div className="flex-1">
-                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Quantity</label>
-                  <input type="number" name="quantity" value={newItem.quantity} onChange={handleInputChange} required className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm text-slate-700 dark:text-slate-200" />
-                </div>
-                <div className="flex-1">
-                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Price</label>
-                  <input type="number" name="price" value={newItem.price} onChange={handleInputChange} required className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm text-slate-700 dark:text-slate-200" />
-                </div>
-              </div>
-              <div className="flex gap-4">
-                <div className="flex-1">
-                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Expiry Date</label>
-                  <input type="date" name="expiryDate" value={newItem.expiryDate} onChange={handleInputChange} required className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm text-slate-700 dark:text-slate-200" />
-                </div>
-                <div className="flex-1">
-                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Threshold</label>
-                  <input type="number" name="threshold" value={newItem.threshold} onChange={handleInputChange} required className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm text-slate-700 dark:text-slate-200" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Supplier</label>
-                <input type="text" name="supplier" value={newItem.supplier} onChange={handleInputChange} required className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm text-slate-700 dark:text-slate-200" />
-              </div>
-              <button type="submit" className="w-full bg-warning hover:bg-amber-600 text-white py-3 mt-4 rounded-xl font-bold shadow-sm hover:shadow-md transition-all">
+              <input type="text" name="supplier" value={newItem.supplier} onChange={handleInputChange} required className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
+              <button type="submit" className="w-full bg-amber-600 hover:bg-amber-700 text-white py-2.5 mt-2 rounded-xl font-bold text-xs shadow-sm">
                 Save Changes
               </button>
             </form>
           </div>
         </div>
       )}
+
+      <AIGenericFinderModal 
+        isOpen={isGenericFinderOpen} 
+        onClose={() => setIsGenericFinderOpen(false)} 
+        onSelectMedicine={(sub) => {
+          setSearchQuery(sub.name);
+          applyFilter(sub.name, '');
+        }}
+      />
+
     </div>
   );
 }

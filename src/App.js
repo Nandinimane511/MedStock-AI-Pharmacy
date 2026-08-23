@@ -14,6 +14,7 @@ import Reports from './Components/Reports';
 import Users from './Components/Users';
 import AuthForm from './Components/AuthForm';
 import Profile from './Components/Profile';
+import PrescriptionScanner from './Components/PrescriptionScanner';
 
 
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
@@ -143,6 +144,16 @@ function App() {
                 }
               />
               
+              {/* AI Prescription Scanner Route */}
+              <Route
+                path="/PrescriptionScanner"
+                element={
+                  <ProtectedRoute allowedRoles={['Admin', 'User']}>
+                    <PrescriptionScanner />
+                  </ProtectedRoute>
+                }
+              />
+
               {/* Billing Route Based on Role */}
               <Route
                 path="/Billing/Admin"
