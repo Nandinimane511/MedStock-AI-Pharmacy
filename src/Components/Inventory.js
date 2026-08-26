@@ -511,19 +511,61 @@ export default function Inventory() {
               <AiOutlineClose size={18} />
             </button>
             <h3 className="text-lg font-bold text-slate-900 dark:text-white border-b border-slate-100 dark:border-slate-700 pb-3 mb-4">Add Medicine Item</h3>
-            <form onSubmit={handleSaveItem} className="flex flex-col gap-3">
-              <input type="text" name="name" placeholder="Item Name (e.g. Amoxicillin 500mg)" value={newItem.name} onChange={handleInputChange} required className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-semibold" />
-              <input type="text" name="category" placeholder="Category (e.g. Antibiotic, Ayurvedic, Analgesic)" value={newItem.category} onChange={handleInputChange} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
-              <div className="flex gap-3">
-                <input type="number" name="quantity" placeholder="Quantity" value={newItem.quantity} onChange={handleInputChange} required className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
-                <input type="number" step="0.01" name="price" placeholder="Price (₹)" value={newItem.price} onChange={handleInputChange} required className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
+            <form onSubmit={handleSaveItem} className="flex flex-col gap-3.5">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Medicine / Brand Name <span className="text-rose-500">*</span>
+                </label>
+                <input type="text" name="name" placeholder="e.g. Haldi Cough Drops / Augmentin 625" value={newItem.name} onChange={handleInputChange} required className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white" />
               </div>
-              <div className="flex gap-3">
-                <input type="date" name="expiryDate" value={newItem.expiryDate} onChange={handleInputChange} className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
-                <input type="number" name="threshold" placeholder="Threshold (e.g. 10)" value={newItem.threshold} onChange={handleInputChange} className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Therapeutic Category
+                </label>
+                <input type="text" name="category" placeholder="e.g. Ayurvedic, Antibiotic, Analgesic, Respiratory" value={newItem.category} onChange={handleInputChange} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white" />
               </div>
-              <input type="text" name="supplier" placeholder="Supplier Name (e.g. Sun Pharma)" value={newItem.supplier} onChange={handleInputChange} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
-              <button type="submit" className="w-full bg-primary-600 hover:bg-primary-700 text-white py-2.5 mt-2 rounded-xl font-bold text-xs shadow-sm cursor-pointer">Save Medicine</button>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Stock Quantity (Units) <span className="text-rose-500">*</span>
+                  </label>
+                  <input type="number" name="quantity" placeholder="e.g. 50" value={newItem.quantity} onChange={handleInputChange} required className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Unit MRP (₹) <span className="text-rose-500">*</span>
+                  </label>
+                  <input type="number" step="0.01" name="price" placeholder="e.g. 120.00" value={newItem.price} onChange={handleInputChange} required className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Batch Expiry Date
+                  </label>
+                  <input type="date" name="expiryDate" value={newItem.expiryDate} onChange={handleInputChange} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Low Stock Alert Threshold
+                  </label>
+                  <input type="number" name="threshold" placeholder="Alert if below (e.g. 10)" value={newItem.threshold} onChange={handleInputChange} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Distributor / Supplier Name
+                </label>
+                <input type="text" name="supplier" placeholder="e.g. Sun Pharma, Cipla, Dabur" value={newItem.supplier} onChange={handleInputChange} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white" />
+              </div>
+
+              <button type="submit" className="w-full bg-primary-600 hover:bg-primary-700 text-white py-2.5 mt-2 rounded-xl font-bold text-xs shadow-md cursor-pointer transition-all">
+                + Save Medicine to Inventory
+              </button>
             </form>
           </div>
         </div>
@@ -537,13 +579,16 @@ export default function Inventory() {
               <AiOutlineClose size={18} />
             </button>
             <h3 className="text-lg font-bold text-slate-900 dark:text-white border-b border-slate-100 dark:border-slate-700 pb-3 mb-4">Remove Medicine</h3>
-            <select onChange={(e) => setSelectedItem(Number(e.target.value))} value={selectedItem || ""} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs mb-4">
-              <option value="">Select Item to Delete</option>
+            <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+              Select Medicine to Delete
+            </label>
+            <select onChange={(e) => setSelectedItem(Number(e.target.value))} value={selectedItem || ""} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs mb-4">
+              <option value="">Choose item from catalog...</option>
               {inventory.map((item) => (
-                <option key={item.id} value={item.id}>{item.name}</option>
+                <option key={item.id} value={item.id}>{item.name} ({item.quantity} units)</option>
               ))}
             </select>
-            <button onClick={handleRemoveSelectedItem} className="w-full bg-rose-600 hover:bg-rose-700 text-white py-2.5 rounded-xl font-bold text-xs shadow-sm">
+            <button onClick={handleRemoveSelectedItem} className="w-full bg-rose-600 hover:bg-rose-700 text-white py-2.5 rounded-xl font-bold text-xs shadow-sm cursor-pointer">
               Confirm Delete
             </button>
           </div>
@@ -557,20 +602,60 @@ export default function Inventory() {
             <button onClick={closeUpdateModal} className="absolute top-5 right-5 text-slate-400 hover:text-slate-600">
               <AiOutlineClose size={18} />
             </button>
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white border-b border-slate-100 dark:border-slate-700 pb-3 mb-4">Edit Medicine</h3>
-            <form onSubmit={handleUpdateItemDetails} className="flex flex-col gap-3">
-              <input type="text" name="name" value={newItem.name} onChange={handleInputChange} required className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
-              <input type="text" name="category" value={newItem.category} onChange={handleInputChange} required className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
-              <div className="flex gap-3">
-                <input type="number" name="quantity" value={newItem.quantity} onChange={handleInputChange} required className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
-                <input type="number" step="0.01" name="price" value={newItem.price} onChange={handleInputChange} required className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white border-b border-slate-100 dark:border-slate-700 pb-3 mb-4">Edit Medicine Details</h3>
+            <form onSubmit={handleUpdateItemDetails} className="flex flex-col gap-3.5">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Medicine / Brand Name
+                </label>
+                <input type="text" name="name" value={newItem.name} onChange={handleInputChange} required className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white" />
               </div>
-              <div className="flex gap-3">
-                <input type="date" name="expiryDate" value={newItem.expiryDate ? new Date(newItem.expiryDate).toISOString().split('T')[0] : ''} onChange={handleInputChange} required className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
-                <input type="number" name="threshold" value={newItem.threshold} onChange={handleInputChange} required className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Therapeutic Category
+                </label>
+                <input type="text" name="category" value={newItem.category} onChange={handleInputChange} required className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white" />
               </div>
-              <input type="text" name="supplier" value={newItem.supplier} onChange={handleInputChange} required className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
-              <button type="submit" className="w-full bg-amber-600 hover:bg-amber-700 text-white py-2.5 mt-2 rounded-xl font-bold text-xs shadow-sm">
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Stock Quantity (Units)
+                  </label>
+                  <input type="number" name="quantity" value={newItem.quantity} onChange={handleInputChange} required className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Unit MRP (₹)
+                  </label>
+                  <input type="number" step="0.01" name="price" value={newItem.price} onChange={handleInputChange} required className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Batch Expiry Date
+                  </label>
+                  <input type="date" name="expiryDate" value={newItem.expiryDate ? new Date(newItem.expiryDate).toISOString().split('T')[0] : ''} onChange={handleInputChange} required className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Low Stock Threshold
+                  </label>
+                  <input type="number" name="threshold" value={newItem.threshold} onChange={handleInputChange} required className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Distributor / Supplier Name
+                </label>
+                <input type="text" name="supplier" value={newItem.supplier} onChange={handleInputChange} required className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white" />
+              </div>
+
+              <button type="submit" className="w-full bg-amber-600 hover:bg-amber-700 text-white py-2.5 mt-2 rounded-xl font-bold text-xs shadow-md cursor-pointer transition-all">
                 Save Changes
               </button>
             </form>
