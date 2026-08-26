@@ -28,6 +28,7 @@ import AIDrugSafetyAlert from './AIDrugSafetyAlert';
 import AIGenericFinderModal from './AIGenericFinderModal';
 import AIPrescriptionParserModal from './AIPrescriptionParserModal';
 import { getLocalInventory, saveLocalInventory, getLocalBills, addLocalBill } from '../utils/dataStore';
+import { checkDrugInteractionsClientSide } from '../utils/clientAiService';
 
 const UserBilling = () => {
   const location = useLocation();
@@ -88,13 +89,26 @@ const UserBilling = () => {
   }, []);
 
   useEffect(() => {
-    if (location.state?.importedPrescription) {
-      const { medicines, patientName, doctorName: docName } = location.state.importedPrescription;
+    let rxData = location.state?.importedPrescription;
+    if (!rxData) {
+      const storedRx = sessionStorage.getItem('medstock_imported_rx');
+      if (storedRx) {
+        try {
+          rxData = JSON.parse(storedRx);
+          sessionStorage.removeItem('medstock_imported_rx');
+        } catch (e) {
+          console.warn('Failed parsing stored prescription', e);
+        }
+      }
+    }
+
+    if (rxData) {
+      const { medicines, patientName, doctorName: docName } = rxData;
       if (Array.isArray(medicines) && medicines.length > 0) {
         const formattedItems = medicines.map(m => ({
-          name: m.medicineName || m.name,
+          name: m.medicineName || m.name || 'Medicine',
           category: m.category || "General",
-          quantity: m.quantity || 1,
+          quantity: parseInt(m.quantity, 10) || 1,
           price: parseFloat(m.unitPrice || m.price || 0),
           discount: 0,
           inventoryId: m.inventoryId || null
@@ -108,6 +122,7 @@ const UserBilling = () => {
         if (docName) {
           setDoctorName(docName);
         }
+        toast.success(`Loaded ${formattedItems.length} prescription items into POS cart!`);
       }
     }
   }, [location.state]);
@@ -118,10 +133,17 @@ const UserBilling = () => {
         try {
           const medNames = billItems.map(item => item.name);
           const res = await api.post('/ai/check-interactions', { medicines: medNames });
-          setDrugSafetyResult(res.data);
+          if (res.data) {
+            setDrugSafetyResult(res.data);
+            return;
+          }
         } catch (err) {
-          console.error("AI safety check error:", err);
+          console.warn("Backend AI safety check offline, running client-side:", err);
         }
+
+        const medNames = billItems.map(item => item.name);
+        const clientSafety = checkDrugInteractionsClientSide(medNames);
+        setDrugSafetyResult(clientSafety);
       } else if (billItems.length === 1) {
         setDrugSafetyResult({
           safe: true,

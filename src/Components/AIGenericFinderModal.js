@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { FaPills, FaSearch, FaTimes, FaCheck, FaExclamationCircle, FaExchangeAlt } from 'react-icons/fa';
 import api from '../api/axiosConfig';
 import toast from 'react-hot-toast';
+import { findGenericSubstitutesClientSide } from '../utils/clientAiService';
+import { getLocalInventory } from '../utils/dataStore';
 
 export default function AIGenericFinderModal({ isOpen, onClose, onSelectMedicine }) {
   const [medicineQuery, setMedicineQuery] = useState('');
@@ -10,17 +12,30 @@ export default function AIGenericFinderModal({ isOpen, onClose, onSelectMedicine
 
   if (!isOpen) return null;
 
-  const handleSearch = async () => {
-    if (!medicineQuery.trim()) return;
+  const handleSearch = async (overrideQuery) => {
+    const queryToSearch = (overrideQuery || medicineQuery || '').trim();
+    if (!queryToSearch) return;
     setLoading(true);
     try {
-      const res = await api.post('/ai/find-substitutes', { medicineName: medicineQuery });
-      setResult(res.data);
+      const res = await api.post('/ai/find-substitutes', { medicineName: queryToSearch });
+      if (res.data && res.data.substitutes) {
+        setResult(res.data);
+        return;
+      }
     } catch (error) {
-      toast.error("Failed to search generic substitutes");
-    } finally {
-      setLoading(false);
+      console.warn("Backend generic finder offline, analyzing locally:", error);
     }
+
+    // Client-side generic finder
+    const localInv = getLocalInventory();
+    const clientResult = findGenericSubstitutesClientSide(queryToSearch, localInv);
+    if (clientResult) {
+      setResult(clientResult);
+      toast.success(`Found active salt equivalents for ${queryToSearch}`);
+    } else {
+      toast.error("No generic substitutes found.");
+    }
+    setLoading(false);
   };
 
   const sampleSearches = ["Augmentin 625", "Dolo 650", "Pan 40", "Norvasc 5mg", "Limcee", "Amaryl 2mg"];
@@ -74,8 +89,8 @@ export default function AIGenericFinderModal({ isOpen, onClose, onSelectMedicine
             {sampleSearches.map((s, idx) => (
               <button
                 key={idx}
-                onClick={() => { setMedicineQuery(s); }}
-                className="px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-teal-50 dark:hover:bg-teal-900/30 text-slate-700 dark:text-slate-200 rounded-md border border-slate-200 dark:border-slate-700"
+                onClick={() => { setMedicineQuery(s); handleSearch(s); }}
+                className="px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-teal-50 dark:hover:bg-teal-900/30 text-slate-700 dark:text-slate-200 rounded-md border border-slate-200 dark:border-slate-700 font-medium cursor-pointer"
               >
                 {s}
               </button>

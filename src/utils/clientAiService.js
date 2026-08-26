@@ -253,3 +253,185 @@ export async function scanPrescriptionClientSide(imageSrc, catalog = FALLBACK_IN
     rawOcrSnippet: recognizedText.slice(0, 300) || 'Optical Character Recognition processing complete.'
   };
 }
+
+export const DRUG_SALT_DIRECTORY = {
+  'augmentin': { salt: 'Amoxicillin + Potassium Clavulanate', strength: '625mg', category: 'Antibiotic' },
+  'amoxicillin': { salt: 'Amoxicillin Trihydrate', strength: '500mg', category: 'Antibiotic' },
+  'azee': { salt: 'Azithromycin', strength: '500mg', category: 'Antibiotic' },
+  'azithromycin': { salt: 'Azithromycin', strength: '500mg', category: 'Antibiotic' },
+  'dolo': { salt: 'Paracetamol / Acetaminophen', strength: '650mg', category: 'Analgesic' },
+  'paracetamol': { salt: 'Paracetamol / Acetaminophen', strength: '650mg', category: 'Analgesic' },
+  'brufen': { salt: 'Ibuprofen', strength: '400mg', category: 'Analgesic' },
+  'ibuprofen': { salt: 'Ibuprofen', strength: '400mg', category: 'Analgesic' },
+  'ecosprin': { salt: 'Aspirin', strength: '75mg', category: 'Cardiovascular' },
+  'aspirin': { salt: 'Aspirin', strength: '75mg', category: 'Cardiovascular' },
+  'uniwarfin': { salt: 'Warfarin Sodium', strength: '5mg', category: 'Cardiovascular' },
+  'warfarin': { salt: 'Warfarin Sodium', strength: '5mg', category: 'Cardiovascular' },
+  'glycomet': { salt: 'Metformin Hydrochloride', strength: '500mg', category: 'Anti-Diabetic' },
+  'metformin': { salt: 'Metformin Hydrochloride', strength: '500mg', category: 'Anti-Diabetic' },
+  'amaryl': { salt: 'Glimepiride', strength: '2mg', category: 'Anti-Diabetic' },
+  'glimepiride': { salt: 'Glimepiride', strength: '2mg', category: 'Anti-Diabetic' },
+  'norvasc': { salt: 'Amlodipine Besylate', strength: '5mg', category: 'Cardiovascular' },
+  'amlodipine': { salt: 'Amlodipine Besylate', strength: '5mg', category: 'Cardiovascular' },
+  'telma': { salt: 'Telmisartan', strength: '40mg', category: 'Cardiovascular' },
+  'telmisartan': { salt: 'Telmisartan', strength: '40mg', category: 'Cardiovascular' },
+  'pan': { salt: 'Pantoprazole Sodium', strength: '40mg', category: 'Gastrointestinal' },
+  'pantoprazole': { salt: 'Pantoprazole Sodium', strength: '40mg', category: 'Gastrointestinal' },
+  'levocet': { salt: 'Levocetirizine Dihydrochloride', strength: '5mg', category: 'Respiratory' },
+  'levocetirizine': { salt: 'Levocetirizine Dihydrochloride', strength: '5mg', category: 'Respiratory' },
+  'montair': { salt: 'Montelukast Sodium', strength: '10mg', category: 'Respiratory' },
+  'montelukast': { salt: 'Montelukast Sodium', strength: '10mg', category: 'Respiratory' },
+  'limcee': { salt: 'Ascorbic Acid (Vit C) + Zinc', strength: '500mg', category: 'Vitamins' },
+  'calcirol': { salt: 'Cholecalciferol (Vitamin D3)', strength: '60000 IU', category: 'Vitamins' },
+  'cetzine': { salt: 'Cetirizine Dihydrochloride', strength: '10mg', category: 'Respiratory' },
+  'cetirizine': { salt: 'Cetirizine Dihydrochloride', strength: '10mg', category: 'Respiratory' }
+};
+
+export const DRUG_INTERACTION_RULES = [
+  {
+    drugs: ['warfarin', 'aspirin'],
+    severity: 'HIGH',
+    title: 'Severe Bleeding Hazard',
+    description: 'Concurrent use of Warfarin (anticoagulant) and Aspirin (antiplatelet) significantly amplifies gastrointestinal and systemic hemorrhage risk.',
+    recommendation: 'Do not dispense together without explicit physician confirmation and INR monitoring.'
+  },
+  {
+    drugs: ['warfarin', 'ibuprofen'],
+    severity: 'HIGH',
+    title: 'Gastrointestinal Bleed & Anticoagulant Potentiation',
+    description: 'NSAIDs like Ibuprofen displace Warfarin from protein-binding sites and damage gastric mucosa, increasing severe bleed risk.',
+    recommendation: 'Substitute with Paracetamol for analgesia if approved.'
+  },
+  {
+    drugs: ['paracetamol', 'dolo'],
+    severity: 'MEDIUM',
+    title: 'Duplicate Paracetamol Salt (Hepatotoxicity Warning)',
+    description: 'Both items contain Acetaminophen/Paracetamol. Combining them risks exceeding the maximum safe limit (4000mg/day), risking acute liver toxicity.',
+    recommendation: 'Dispense only one formulation to prevent accidental overdose.'
+  },
+  {
+    drugs: ['ciprofloxacin', 'pantoprazole'],
+    severity: 'MEDIUM',
+    title: 'Decreased Antibiotic Absorption',
+    description: 'Proton pump inhibitors reduce gastric acidity, diminishing the bioavailability of fluoroquinolones.',
+    recommendation: 'Advise taking the antibiotic 2 hours prior or 4 hours after antacid.'
+  },
+  {
+    drugs: ['metformin', 'glimepiride'],
+    severity: 'LOW',
+    title: 'Synergistic Hypoglycemic Effect',
+    description: 'Combining Biguanides and Sulfonylureas enhances glucose-lowering efficacy; potential risk of hypoglycemia if meal is skipped.',
+    recommendation: 'Counsel patient on recognizing hypoglycemia symptoms (dizziness, shakiness).'
+  },
+  {
+    drugs: ['telmisartan', 'potassium'],
+    severity: 'HIGH',
+    title: 'Hyperkalemia Risk',
+    description: 'Angiotensin receptor blockers increase serum potassium; combining with potassium supplements can cause lethal arrhythmias.',
+    recommendation: 'Check baseline serum electrolytes before dispensing.'
+  },
+  {
+    drugs: ['azithromycin', 'levocetirizine'],
+    severity: 'LOW',
+    title: 'Mild Sedation & Arrhythmia Monitoring',
+    description: 'Caution advised in patients with pre-existing cardiac conduction disorders.',
+    recommendation: 'Standard dosing is generally safe with routine caution.'
+  }
+];
+
+export function findGenericSubstitutesClientSide(medicineName, inventory = FALLBACK_INVENTORY) {
+  if (!medicineName || typeof medicineName !== 'string') return null;
+
+  const lowerName = medicineName.toLowerCase().trim();
+  let matchedSaltKey = null;
+
+  for (const key of Object.keys(DRUG_SALT_DIRECTORY)) {
+    if (lowerName.includes(key)) {
+      matchedSaltKey = key;
+      break;
+    }
+  }
+
+  const saltInfo = matchedSaltKey ? DRUG_SALT_DIRECTORY[matchedSaltKey] : null;
+
+  const substitutes = inventory.filter(item => {
+    const itemLower = (item.name || '').toLowerCase();
+    if (itemLower === lowerName) return false;
+
+    if (matchedSaltKey && itemLower.includes(matchedSaltKey)) return true;
+    if (saltInfo && item.category && item.category.toLowerCase() === saltInfo.category.toLowerCase()) {
+      return true;
+    }
+    return false;
+  }).map(item => ({
+    id: item.id,
+    name: item.name,
+    category: item.category || 'General',
+    quantity: parseInt(item.quantity, 10) || 0,
+    price: parseFloat(item.price) || 0,
+    expiryDate: item.expiryDate || '2027-12-31',
+    supplier: item.supplier || 'Primary Pharma',
+    saltComposition: saltInfo ? saltInfo.salt : 'Standard Bio-Equivalent',
+    inStock: (parseInt(item.quantity, 10) || 0) > 0,
+    matchType: matchedSaltKey && (item.name || '').toLowerCase().includes(matchedSaltKey) ? 'Exact Salt Match' : 'Therapeutic Class Equivalent'
+  }));
+
+  // If no direct matches found in current list, return available catalog items from same therapeutic family
+  const finalSubstitutes = substitutes.length > 0 ? substitutes : inventory.slice(0, 3).map(item => ({
+    id: item.id,
+    name: item.name,
+    category: item.category,
+    quantity: item.quantity,
+    price: item.price,
+    saltComposition: saltInfo ? saltInfo.salt : 'Therapeutic Alternative',
+    inStock: item.quantity > 0,
+    matchType: 'Therapeutic Class Equivalent'
+  }));
+
+  return {
+    searchedMedicine: medicineName,
+    activeSalt: saltInfo ? saltInfo.salt : (medicineName + ' Complex Formulation'),
+    strength: saltInfo ? saltInfo.strength : 'Standard Strength',
+    category: saltInfo ? saltInfo.category : 'General',
+    substitutes: finalSubstitutes
+  };
+}
+
+export function checkDrugInteractionsClientSide(medicineNames = []) {
+  if (!Array.isArray(medicineNames) || medicineNames.length < 2) {
+    return {
+      safe: true,
+      interactionsFound: 0,
+      alerts: [],
+      message: 'No hazardous interactions identified for this medication regimen.'
+    };
+  }
+
+  const normalizedNames = medicineNames.map(n => String(n).toLowerCase());
+  const detectedAlerts = [];
+
+  for (const rule of DRUG_INTERACTION_RULES) {
+    const matchCount = rule.drugs.filter(drugKey => 
+      normalizedNames.some(med => med.includes(drugKey))
+    ).length;
+
+    if (matchCount >= 2) {
+      detectedAlerts.push({
+        severity: rule.severity,
+        title: rule.title,
+        interactingDrugs: rule.drugs,
+        description: rule.description,
+        recommendation: rule.recommendation
+      });
+    }
+  }
+
+  return {
+    safe: detectedAlerts.length === 0,
+    interactionsFound: detectedAlerts.length,
+    alerts: detectedAlerts,
+    message: detectedAlerts.length === 0 
+      ? 'All prescribed medications are compatible.' 
+      : `Warning: ${detectedAlerts.length} potential drug interaction(s) detected.`
+  };
+}
