@@ -153,13 +153,24 @@ export default function Inventory() {
       return;
     }
 
+    const payload = {
+      ...newItem,
+      name: newItem.name.trim(),
+      category: newItem.category?.trim() || 'General',
+      quantity: parseInt(newItem.quantity, 10) || 0,
+      price: parseFloat(newItem.price) || 0,
+      expiryDate: newItem.expiryDate || new Date(Date.now() + 365 * 86400000).toISOString().split('T')[0],
+      threshold: parseInt(newItem.threshold, 10) || 10,
+      supplier: newItem.supplier?.trim() || 'Standard Supplier'
+    };
+
     try {
-      await api.post('/inventory', newItem);
+      await api.post('/inventory', payload);
     } catch (error) {
       console.warn('Backend save unavailable, saving to local store:', error);
     }
 
-    const added = addLocalInventoryItem(newItem);
+    const added = addLocalInventoryItem(payload);
     fetchInventoryData();
     closeAddModal();
     toast.success(`Medicine "${added.name}" added successfully!`);
@@ -501,18 +512,18 @@ export default function Inventory() {
             </button>
             <h3 className="text-lg font-bold text-slate-900 dark:text-white border-b border-slate-100 dark:border-slate-700 pb-3 mb-4">Add Medicine Item</h3>
             <form onSubmit={handleSaveItem} className="flex flex-col gap-3">
-              <input type="text" name="name" placeholder="Item Name (e.g. Amoxicillin 500mg)" value={newItem.name} onChange={handleInputChange} required className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
-              <input type="text" name="category" placeholder="Category (e.g. Antibiotic, Analgesic)" value={newItem.category} onChange={handleInputChange} required className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
+              <input type="text" name="name" placeholder="Item Name (e.g. Amoxicillin 500mg)" value={newItem.name} onChange={handleInputChange} required className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-semibold" />
+              <input type="text" name="category" placeholder="Category (e.g. Antibiotic, Ayurvedic, Analgesic)" value={newItem.category} onChange={handleInputChange} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
               <div className="flex gap-3">
                 <input type="number" name="quantity" placeholder="Quantity" value={newItem.quantity} onChange={handleInputChange} required className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
                 <input type="number" step="0.01" name="price" placeholder="Price (₹)" value={newItem.price} onChange={handleInputChange} required className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
               </div>
               <div className="flex gap-3">
-                <input type="date" name="expiryDate" value={newItem.expiryDate} onChange={handleInputChange} required className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
-                <input type="number" name="threshold" placeholder="Threshold (e.g. 20)" value={newItem.threshold} onChange={handleInputChange} required className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
+                <input type="date" name="expiryDate" value={newItem.expiryDate} onChange={handleInputChange} className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
+                <input type="number" name="threshold" placeholder="Threshold (e.g. 10)" value={newItem.threshold} onChange={handleInputChange} className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
               </div>
-              <input type="text" name="supplier" placeholder="Supplier Name" value={newItem.supplier} onChange={handleInputChange} required className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
-              <button type="submit" className="w-full bg-primary-600 hover:bg-primary-700 text-white py-2.5 mt-2 rounded-xl font-bold text-xs shadow-sm">Save Medicine</button>
+              <input type="text" name="supplier" placeholder="Supplier Name (e.g. Sun Pharma)" value={newItem.supplier} onChange={handleInputChange} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs" />
+              <button type="submit" className="w-full bg-primary-600 hover:bg-primary-700 text-white py-2.5 mt-2 rounded-xl font-bold text-xs shadow-sm cursor-pointer">Save Medicine</button>
             </form>
           </div>
         </div>

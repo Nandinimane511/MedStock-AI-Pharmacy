@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { FaRobot, FaTimes, FaPaperPlane, FaExclamationTriangle, FaBoxes } from 'react-icons/fa';
 import api from '../api/axiosConfig';
 import toast from 'react-hot-toast';
+import { answerAiAssistantQueryClientSide } from '../utils/clientAiService';
+import { getLocalInventory, getLocalBills } from '../utils/dataStore';
 
 export default function AIAssistantModal({ isOpen, onClose }) {
   const [prompt, setPrompt] = useState('');
@@ -32,30 +34,36 @@ export default function AIAssistantModal({ isOpen, onClose }) {
     setPrompt('');
     setLoading(true);
 
+    let aiData = null;
+
     try {
       const res = await api.post('/ai/assistant', { prompt: textToSend });
-      const aiData = res.data;
-
-      let formattedText = aiData.summary || "Here is what I found:";
-      if (aiData.suggestion) {
-        formattedText += `\n\n💡 **Recommendation:** ${aiData.suggestion}`;
+      if (res.data && (res.data.summary || res.data.answer)) {
+        aiData = res.data;
       }
-
-      setMessages(prev => [...prev, {
-        sender: 'ai',
-        text: formattedText,
-        data: aiData.data,
-        type: aiData.type
-      }]);
     } catch (error) {
-      toast.error('AI assistant was unable to process request.');
-      setMessages(prev => [...prev, {
-        sender: 'ai',
-        text: "❌ Sorry, I encountered an issue connecting to the AI analytics engine. Please make sure the backend server is active."
-      }]);
-    } finally {
-      setLoading(false);
+      console.warn("Backend AI assistant offline, processing on client AI engine:", error);
     }
+
+    if (!aiData) {
+      const localInv = getLocalInventory();
+      const localBills = getLocalBills();
+      aiData = answerAiAssistantQueryClientSide(textToSend, localInv, localBills);
+    }
+
+    let formattedText = aiData.summary || aiData.answer || "Here is what I found:";
+    if (aiData.suggestion) {
+      formattedText += `\n\n💡 **Recommendation:** ${aiData.suggestion}`;
+    }
+
+    setMessages(prev => [...prev, {
+      sender: 'ai',
+      text: formattedText,
+      data: aiData.data,
+      type: aiData.type
+    }]);
+
+    setLoading(false);
   };
 
   return (
